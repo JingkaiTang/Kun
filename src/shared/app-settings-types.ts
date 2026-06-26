@@ -1,6 +1,7 @@
 import type { GuiUpdateChannel } from './gui-update'
 import type { KeyboardShortcutsConfigV1 } from './keyboard-shortcuts'
 import type { LocalWhisperDownloadSourceId } from './local-whisper'
+import type { MobileSessionV1 } from './mobile-api-types'
 import type { ApprovalPolicy, SandboxMode } from '../../kun/src/contracts/policy.js'
 import type { ComputerUseMode } from '../../kun/src/contracts/capabilities.js'
 import type { ModelEndpointFormat } from '../../kun/src/contracts/model-endpoint-format.js'
@@ -1732,6 +1733,15 @@ export type TerminalSettingsPatchV1 = {
   colors?: Partial<TerminalColorSettingsV1>
 }
 
+export type MobileSettingsV1 = {
+  gatewayEnabled: boolean
+  sessions: MobileSessionV1[]
+}
+export type MobileSettingsPatchV1 = {
+  gatewayEnabled?: boolean
+  sessions?: MobileSessionV1[]
+}
+
 export type AppSettingsV1 = {
   version: 1
   locale: 'en' | 'zh'
@@ -1753,13 +1763,14 @@ export type AppSettingsV1 = {
   workflow: WorkflowSettingsV1
   guiUpdate: GuiUpdateConfigV1
   terminal: TerminalSettingsV1
+  mobile: MobileSettingsV1
   codePromptPrefix: string
   /** User-disabled skill IDs. Disabled skills are hidden from command surfaces. */
   disabledSkillIds: string[]
 }
 
 export type AppSettingsPatch = Partial<
-  Omit<AppSettingsV1, 'provider' | 'agents' | 'log' | 'checkpointCleanup' | 'notifications' | 'appBehavior' | 'keyboardShortcuts' | 'write' | 'claw' | 'schedule' | 'workflow' | 'guiUpdate' | 'terminal'>
+  Omit<AppSettingsV1, 'provider' | 'agents' | 'log' | 'checkpointCleanup' | 'notifications' | 'appBehavior' | 'keyboardShortcuts' | 'write' | 'claw' | 'schedule' | 'workflow' | 'guiUpdate' | 'terminal' | 'mobile'>
 > & {
   provider?: ModelProviderSettingsPatchV1
   agents?: KunSettingsEnvelopePatchV1
@@ -1774,4 +1785,5 @@ export type AppSettingsPatch = Partial<
   workflow?: WorkflowSettingsPatchV1
   guiUpdate?: Partial<GuiUpdateConfigV1>
   terminal?: TerminalSettingsPatchV1
+  mobile?: MobileSettingsPatchV1
 }

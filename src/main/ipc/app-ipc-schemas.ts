@@ -1362,6 +1362,15 @@ const settingsPatchObjectSchema = z.object({
   schedule: scheduleSettingsPatchSchema.optional(),
   workflow: workflowSettingsPatchSchema.optional(),
   terminal: terminalSettingsPatchSchema.optional(),
+  mobile: z.object({
+    gatewayEnabled: z.boolean().optional(),
+    sessions: z.array(z.object({
+      id: z.string().max(MAX_ID_LENGTH),
+      name: z.string().max(200),
+      token: z.string().max(MAX_ID_LENGTH),
+      createdAt: z.string().max(128)
+    }).strict()).max(100).optional()
+  }).strict().optional(),
   guiUpdate: z.object({
     channel: z.enum(GUI_UPDATE_CHANNELS).optional()
   }).strict().optional(),
@@ -1849,3 +1858,22 @@ export const terminalResizePayloadSchema = z
     rows: z.number().int().min(1).max(TERMINAL_MAX_ROWS).default(TERMINAL_DEFAULT_ROWS)
   })
   .strict()
+
+export const mobileSessionSchema = z.object({
+  id: z.string().max(MAX_ID_LENGTH),
+  name: z.string().max(200),
+  token: z.string().max(MAX_ID_LENGTH),
+  createdAt: z.string().max(128)
+}).strict()
+
+export const mobileCreateSessionPayloadSchema = z.object({
+  name: trimmedString(200)
+}).strict()
+
+export const mobileRefreshTokenPayloadSchema = z.object({
+  id: trimmedString(MAX_ID_LENGTH)
+}).strict()
+
+export const mobileRevokeSessionPayloadSchema = z.object({
+  id: trimmedString(MAX_ID_LENGTH)
+}).strict()

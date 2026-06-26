@@ -65,6 +65,7 @@ import { cleanupUnusedGitCheckpointsIfDue } from './services/git-checkpoint-serv
 import { createClawRuntime, type ClawRuntime } from './claw-runtime'
 import { createScheduleRuntime, type ScheduleRuntime } from './schedule-runtime'
 import { createWorkflowRuntime, type WorkflowRuntime } from './workflow-runtime'
+import { MobileGateway } from './mobile-gateway'
 import { runClawScheduleMcpServerFromArgv } from './claw-schedule-mcp-server'
 import {
   clawScheduleMcpSettingsChanged,
@@ -1546,6 +1547,29 @@ app.whenReady().then(async () => {
   configureManagedWeixinBridgeUrlResolver(ensureWeixinBridgeRpcUrl)
   syncWeixinBridgeRuntime(initial)
 
+  // Mobile Gateway lifecycle
+  let mobileGateway: MobileGateway | null = null
+  if (initial.mobile.gatewayEnabled) {
+    try {
+      mobileGateway = new MobileGateway(store, initial.mobile.sessions, logError)
+      await mobileGateway.start()
+    } catch (error) {
+      logError('mobile-gateway', 'Failed to start mobile gateway on startup', {
+        message: error instanceof Error ? error.message : String(error)
+      })
+    }
+  }
+
+  app.on('before-quit', () => {
+    if (mobileGateway) {
+      mobileGateway.stop().catch((error) => {
+        logError('mobile-gateway', 'Failed to stop mobile gateway on quit', {
+          message: error instanceof Error ? error.message : String(error)
+        })
+      })
+    }
+  })
+
   traceStartup('ipc registration:start')
   const applySettingsPatch = async (partial: AppSettingsPatch): Promise<AppSettingsV1> => {
     const prev = await store.load()
@@ -1572,6 +1596,7 @@ app.whenReady().then(async () => {
       schedule: mergeScheduleSettings(prev.schedule, partial.schedule),
       workflow: mergeWorkflowSettings(prev.workflow, partial.workflow),
       terminal: mergeTerminalSettings(prev.terminal, partial.terminal),
+      mobile: { ...prev.mobile, ...(partial.mobile ?? {}) },
       guiUpdate: { ...prev.guiUpdate, ...(partial.guiUpdate ?? {}) }
     })
     if (prev.log.enabled !== next.log.enabled || prev.log.retentionDays !== next.log.retentionDays) {

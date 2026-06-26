@@ -1,0 +1,31 @@
+{
+  "expo": {
+    "name": "Kun Mobile",
+    "slug": "kun-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "kunmobile",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.kun.mobile"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#f3f5fc"
+      },
+      "package": "com.kun.mobile"
+    },
+    "web": {
+      "bundler": "metro",
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-router"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

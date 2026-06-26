@@ -106,7 +106,8 @@ function buildSettings(): AppSettingsV1 {
     terminal: defaultTerminalSettings(),
     guiUpdate: { channel: 'stable' },
     codePromptPrefix: '',
-    disabledSkillIds: []
+    disabledSkillIds: [],
+    mobile: { gatewayEnabled: false, sessions: [] }
   }
   settings.claw.enabled = true
   settings.claw.im.workspaceRoot = '/tmp/claw'

@@ -235,7 +235,11 @@ const defaultSettings = (): AppSettingsV1 => ({
   claw: defaultClawSettings(),
   schedule: defaultScheduleSettings(),
   workflow: defaultWorkflowSettings(),
-  terminal: defaultTerminalSettings()
+  terminal: defaultTerminalSettings(),
+  mobile: {
+    gatewayEnabled: false,
+    sessions: []
+  }
 })
 
 function buildMergedSettings(parsed: Partial<AppSettingsV1>): AppSettingsV1 {
@@ -261,6 +265,7 @@ function buildMergedSettings(parsed: Partial<AppSettingsV1>): AppSettingsV1 {
     schedule: mergeScheduleSettings(defaults.schedule, migrated.schedule),
     workflow: mergeWorkflowSettings(defaults.workflow, migrated.workflow),
     terminal: mergeTerminalSettings(defaults.terminal, migrated.terminal),
+    mobile: { ...defaults.mobile, ...(migrated.mobile ?? {}) },
     guiUpdate: { ...defaults.guiUpdate, ...migrated.guiUpdate },
     codePromptPrefix: typeof migrated.codePromptPrefix === 'string' ? migrated.codePromptPrefix : '',
     disabledSkillIds: normalizeDisabledSkillIds(migrated.disabledSkillIds)

@@ -87,7 +87,8 @@ export function mergeSettings(current: AppSettingsV1, patch: SettingsPatch): App
     guiUpdate: {
       ...safeCurrent.guiUpdate,
       ...(patch.guiUpdate ?? {})
-    }
+    },
+    mobile: safeCurrent.mobile
   }
 }
 
@@ -131,7 +132,11 @@ export function coerceRendererSettings(settings: AppSettingsV1): AppSettingsV1 {
       channel: normalizeGuiUpdateChannel(raw.guiUpdate?.channel ?? DEFAULT_GUI_UPDATE_CHANNEL)
     },
     codePromptPrefix: typeof raw.codePromptPrefix === 'string' ? raw.codePromptPrefix : '',
-    disabledSkillIds: normalizeDisabledSkillIds(raw.disabledSkillIds)
+    disabledSkillIds: normalizeDisabledSkillIds(raw.disabledSkillIds),
+    mobile: {
+      gatewayEnabled: raw.mobile?.gatewayEnabled === true,
+      sessions: Array.isArray(raw.mobile?.sessions) ? raw.mobile.sessions : []
+    }
   }
 }
 

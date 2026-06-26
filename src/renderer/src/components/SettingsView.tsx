@@ -66,6 +66,7 @@ import {
   WorktreeSettingsSection,
   MediaGenerationSettingsSection,
   MemorySettingsSection,
+  MobileSettingsSection,
   ProvidersSettingsSection,
   SpeechToTextSettingsSection,
   UpdatesSettingsSection,
@@ -73,7 +74,7 @@ import {
   TerminalSettingsSection
 } from './settings-sections'
 
-type SettingsCategory = 'general' | 'providers' | 'write' | 'mediaGeneration' | 'speechToText' | 'agents' | 'archives' | 'permissions' | 'worktree' | 'memory' | 'shortcuts' | 'easterEgg' | 'claw' | 'updates' | 'debug' | 'terminal'
+type SettingsCategory = 'general' | 'providers' | 'write' | 'mediaGeneration' | 'speechToText' | 'agents' | 'archives' | 'permissions' | 'worktree' | 'memory' | 'shortcuts' | 'easterEgg' | 'claw' | 'mobile' | 'updates' | 'debug' | 'terminal'
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error'
 type SettingsPatch = AppSettingsPatch
 type InlineNotice = {
@@ -325,6 +326,10 @@ export function SettingsView(): ReactElement {
       setCategory('terminal')
       return
     }
+    if (settingsSection === 'mobile') {
+      setCategory('mobile')
+      return
+    }
     setCategory('agents')
   }, [settingsSection])
 
@@ -343,12 +348,13 @@ export function SettingsView(): ReactElement {
       settingsSection === 'easterEgg' ||
       settingsSection === 'updates' ||
       settingsSection === 'terminal' ||
+      settingsSection === 'mobile' ||
       category !== 'agents'
     ) {
       return
     }
     const refs: Record<
-      Exclude<SettingsRouteSection, 'general' | 'providers' | 'write' | 'imageGeneration' | 'mediaGeneration' | 'speechToText' | 'archives' | 'claw' | 'shortcuts' | 'easterEgg' | 'updates' | 'terminal'>,
+      Exclude<SettingsRouteSection, 'general' | 'providers' | 'write' | 'imageGeneration' | 'mediaGeneration' | 'speechToText' | 'archives' | 'claw' | 'shortcuts' | 'easterEgg' | 'updates' | 'terminal' | 'mobile'>,
       HTMLDivElement | null
     > = {
       agents: agentsSectionRef.current,
@@ -1041,6 +1047,7 @@ export function SettingsView(): ReactElement {
           {category === 'shortcuts' ? <KeyboardShortcutsSettingsSection ctx={settingsSectionContext} /> : null}
           {category === 'easterEgg' ? <EasterEggSettingsSection ctx={settingsSectionContext} /> : null}
           {category === 'claw' ? <ClawSettingsSection ctx={settingsSectionContext} /> : null}
+          {category === 'mobile' ? <MobileSettingsSection /> : null}
           {category === 'updates' ? <UpdatesSettingsSection ctx={settingsSectionContext} /> : null}
           {category === 'terminal' ? <TerminalSettingsSection ctx={settingsSectionContext} /> : null}
           {category === 'debug' ? <LlmDebugSettingsSection ctx={settingsSectionContext} /> : null}

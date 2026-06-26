@@ -94,7 +94,11 @@ import {
   writePrototypeFilePayloadSchema,
   writeRetrievalPayloadSchema,
   workspaceRootSchema,
-  legacySessionImportPayloadSchema
+  legacySessionImportPayloadSchema,
+  mobileSessionSchema,
+  mobileCreateSessionPayloadSchema,
+  mobileRefreshTokenPayloadSchema,
+  mobileRevokeSessionPayloadSchema
 } from './app-ipc-schemas'
 import { DEFAULT_KUN_DATA_DIR, resolveKunRuntimeSettings } from '../../shared/app-settings'
 import { detectLegacySessions, importLegacySessions } from '../services/legacy-session-import-service'
@@ -105,6 +109,10 @@ import type { ScheduleRuntime } from '../schedule-runtime'
 import { verifyTelegramBotToken } from '../telegram-runtime'
 import type { WorkflowRuntime } from '../workflow-runtime'
 import { checkWorkflowCode } from '../workflow-runtime'
+import { MobileGateway } from '../mobile-gateway'
+import { createSession, revokeSession, refreshToken } from '../mobile-session'
+import type { MobileSessionV1 } from '../../shared/mobile-api-types'
+import { networkInterfaces } from 'node:os'
 import {
   checkoutGitBranchWorktree,
   createAndSwitchGitBranch,
@@ -1354,4 +1362,122 @@ export function registerAppIpcHandlers(options: RegisterAppIpcHandlersOptions): 
     if (error) return { ok: false, message: error }
     return { ok: true }
   })
+
+  // Mobile Gateway IPC handlers
+  let mobileGateway: MobileGateway | null = null
+
+  ipcMain.handle('mobile:getStatus', async () => {
+    const settings = await store.load()
+    return {
+      gatewayEnabled: settings.mobile.gatewayEnabled,
+      port: mobileGateway?.activePort ?? 0,
+      sessions: settings.mobile.sessions,
+      lanIp: getLanIp()
+    }
+  })
+
+  ipcMain.handle('mobile:startGateway', async () => {
+    try {
+      const settings = await store.load()
+      if (!mobileGateway) {
+        mobileGateway = new MobileGateway(
+          store,
+          settings.mobile.sessions,
+          logError
+        )
+      } else {
+        mobileGateway.updateSessions(settings.mobile.sessions)
+      }
+      const port = await mobileGateway.start()
+      await store.patch({ mobile: { ...settings.mobile, gatewayEnabled: true } })
+      return { port }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      logError('mobile-gateway', 'Failed to start gateway', { message })
+      throw error
+    }
+  })
+
+  ipcMain.handle('mobile:stopGateway', async () => {
+    try {
+      if (mobileGateway) {
+        await mobileGateway.stop()
+      }
+      const settings = await store.load()
+      await store.patch({ mobile: { ...settings.mobile, gatewayEnabled: false } })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      logError('mobile-gateway', 'Failed to stop gateway', { message })
+      throw error
+    }
+  })
+
+  ipcMain.handle('mobile:createSession', async (_, payload: unknown) => {
+    try {
+      const request = parseIpcPayload('mobile:createSession', mobileCreateSessionPayloadSchema, payload)
+      const newSession = createSession(request.name)
+      const settings = await store.load()
+      const updatedSessions = [...settings.mobile.sessions, newSession]
+      await store.patch({ mobile: { ...settings.mobile, sessions: updatedSessions } })
+      if (mobileGateway) {
+        mobileGateway.updateSessions(updatedSessions)
+      }
+      return newSession
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      logError('mobile-gateway', 'Failed to create session', { message })
+      throw error
+    }
+  })
+
+  ipcMain.handle('mobile:refreshToken', async (_, payload: unknown) => {
+    try {
+      const request = parseIpcPayload('mobile:refreshToken', mobileRefreshTokenPayloadSchema, payload)
+      const settings = await store.load()
+      const updatedSessions = refreshToken(request.id, settings.mobile.sessions)
+      await store.patch({ mobile: { ...settings.mobile, sessions: updatedSessions } })
+      if (mobileGateway) {
+        mobileGateway.updateSessions(updatedSessions)
+      }
+      const updatedSession = updatedSessions.find(s => s.id === request.id)
+      return updatedSession!
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      logError('mobile-gateway', 'Failed to refresh token', { message })
+      throw error
+    }
+  })
+
+  ipcMain.handle('mobile:revokeSession', async (_, payload: unknown) => {
+    try {
+      const request = parseIpcPayload('mobile:revokeSession', mobileRevokeSessionPayloadSchema, payload)
+      const settings = await store.load()
+      const updatedSessions = revokeSession(request.id, settings.mobile.sessions)
+      await store.patch({ mobile: { ...settings.mobile, sessions: updatedSessions } })
+      if (mobileGateway) {
+        mobileGateway.updateSessions(updatedSessions)
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      logError('mobile-gateway', 'Failed to revoke session', { message })
+      throw error
+    }
+  })
+
+  ipcMain.handle('mobile:getLanIp', async () => {
+    return { ip: getLanIp() }
+  })
+}
+
+function getLanIp(): string {
+  const interfaces = networkInterfaces()
+  for (const [name, addrs] of Object.entries(interfaces)) {
+    if (name === 'lo' || name.startsWith('utun') || name.startsWith('awdl')) continue
+    for (const addr of addrs ?? []) {
+      if (addr.family === 'IPv4' && !addr.internal) {
+        return addr.address
+      }
+    }
+  }
+  return '127.0.0.1'
 }

@@ -110,7 +110,11 @@ export function normalizeAppSettings(settings: AppSettingsV1): AppSettingsV1 {
       )
     },
     codePromptPrefix: typeof maybeSettings.codePromptPrefix === 'string' ? maybeSettings.codePromptPrefix : '',
-    disabledSkillIds: normalizeDisabledSkillIds(maybeSettings.disabledSkillIds)
+    disabledSkillIds: normalizeDisabledSkillIds(maybeSettings.disabledSkillIds),
+    mobile: {
+      gatewayEnabled: maybeSettings.mobile?.gatewayEnabled === true,
+      sessions: Array.isArray(maybeSettings.mobile?.sessions) ? maybeSettings.mobile.sessions : []
+    }
   }
 }
 

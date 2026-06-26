@@ -69,7 +69,8 @@ function settings(): AppSettingsV1 {
     terminal: defaultTerminalSettings(),
     guiUpdate: { channel: 'stable' },
     codePromptPrefix: '',
-    disabledSkillIds: []
+    disabledSkillIds: [],
+    mobile: { gatewayEnabled: false, sessions: [] }
   }
 }
 
