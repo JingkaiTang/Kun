@@ -182,7 +182,15 @@ export class MobileGateway {
       }
     }
 
-    // 2. Strip /mobile prefix
+    // 2. Handle health check directly (no proxy to Kun API)
+    if (isHealth) {
+      res.writeHead(200, { 'content-type': 'application/json' })
+      res.end(JSON.stringify({ status: 'ok', service: 'mobile-gateway' }))
+      this.log(`[mobile-gateway] ${req.method} ${req.url} → 200 (${Date.now() - start}ms)`)
+      return
+    }
+
+    // 3. Strip /mobile prefix
     if (!rawPath.startsWith('/mobile')) {
       res.writeHead(404, { 'content-type': 'text/plain' })
       res.end('Not Found')
@@ -190,7 +198,7 @@ export class MobileGateway {
     }
     const targetPath = rawPath.slice('/mobile'.length) || '/'
 
-    // 3. Whitelist check
+    // 4. Whitelist check
     if (!matchWhitelist(req.method, targetPath)) {
       res.writeHead(404, { 'content-type': 'text/plain' })
       res.end('Not Found')
@@ -198,7 +206,7 @@ export class MobileGateway {
       return
     }
 
-    // 4. Proxy to Kun API — remove hop-by-hop and upstream-incorrect headers
+    // 5. Proxy to Kun API — remove hop-by-hop and upstream-incorrect headers
     const { authorization: _auth, host: _host, ...forwardHeaders } = req.headers
     const options = {
       host: '127.0.0.1',

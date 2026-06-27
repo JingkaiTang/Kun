@@ -28,9 +28,9 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
     set({ status: 'connecting', error: null });
 
     // Quick health check (no auth needed)
-    const healthy = await healthCheck(baseUrl);
-    if (!healthy) {
-      set({ status: 'disconnected', error: 'Cannot reach the gateway. Check the address and ensure the desktop app is running.' });
+    const result = await healthCheck(baseUrl);
+    if (!result.ok) {
+      set({ status: 'disconnected', error: `Cannot reach the gateway: ${result.error || 'unknown error'}` });
       return false;
     }
 
@@ -52,8 +52,8 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
     if (creds) {
       // Try to auto-connect
       set({ baseUrl: creds.baseUrl, token: creds.token, status: 'connecting' });
-      const healthy = await healthCheck(creds.baseUrl);
-      if (healthy) {
+      const result = await healthCheck(creds.baseUrl);
+      if (result.ok) {
         set({ status: 'connected' });
         return true;
       } else {

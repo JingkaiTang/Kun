@@ -102,12 +102,19 @@ export async function apiFetch<T>(
   }
 }
 
-export async function healthCheck(baseUrl: string): Promise<boolean> {
+export async function healthCheck(baseUrl: string): Promise<{ ok: boolean; error?: string }> {
   try {
     const url = `${baseUrl.replace(/\/+$/, '')}/mobile/health`;
-    const response = await fetch(url, { method: 'GET' });
-    return response.ok;
-  } catch {
-    return false;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+    const response = await fetch(url, { method: 'GET', signal: controller.signal });
+    clearTimeout(timeout);
+    if (!response.ok) {
+      return { ok: false, error: `Server returned ${response.status}` };
+    }
+    return { ok: true };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Network error';
+    return { ok: false, error: message };
   }
 }
