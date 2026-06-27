@@ -168,18 +168,21 @@ export class MobileGateway {
   private handleRequest(req: IncomingMessage, res: ServerResponse): void {
     const start = Date.now()
 
-    // 1. Auth
-    const authHeader = req.headers.authorization ?? ''
-    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : ''
-    if (!validateToken(token, this.sessions)) {
-      res.writeHead(401, { 'content-type': 'text/plain' })
-      res.end('Unauthorized')
-      this.log(`[mobile-gateway] ${req.method} ${req.url} → 401 (${Date.now() - start}ms)`)
-      return
+    // 1. Auth (allow /health without token)
+    const rawPath = req.url ?? '/'
+    const isHealth = rawPath.replace(/^\/mobile/, '') === '/health' || rawPath === '/health'
+    if (!isHealth) {
+      const authHeader = req.headers.authorization ?? ''
+      const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : ''
+      if (!validateToken(token, this.sessions)) {
+        res.writeHead(401, { 'content-type': 'text/plain' })
+        res.end('Unauthorized')
+        this.log(`[mobile-gateway] ${req.method} ${req.url} → 401 (${Date.now() - start}ms)`)
+        return
+      }
     }
 
     // 2. Strip /mobile prefix
-    const rawPath = req.url ?? '/'
     if (!rawPath.startsWith('/mobile')) {
       res.writeHead(404, { 'content-type': 'text/plain' })
       res.end('Not Found')
