@@ -1,4 +1,5 @@
 // Mobile-specific types for Kun app
+// Aligned with desktop agent/types.ts ChatBlock structure
 
 export interface ThreadSummary {
   id: string;
@@ -14,6 +15,7 @@ export interface ThreadSummary {
 
 export interface ThreadDetail extends ThreadSummary {
   turns?: TurnSummary[];
+  chatBlocks?: ChatBlock[];
 }
 
 export interface TurnSummary {
@@ -29,6 +31,95 @@ export interface TodoItem {
   status: 'pending' | 'in_progress' | 'completed' | 'failed';
   order: number;
 }
+
+// ---- ChatBlock types (aligned with desktop) ----
+
+export type ToolBlock = {
+  kind: 'tool';
+  id: string;
+  turnId?: string;
+  createdAt?: string;
+  summary: string;
+  status: 'running' | 'success' | 'error';
+  toolName?: string;
+  detail?: string;
+  filePath?: string;
+  meta?: Record<string, unknown>;
+};
+
+export type ApprovalBlock = {
+  kind: 'approval';
+  id: string;
+  createdAt?: string;
+  approvalId: string;
+  summary: string;
+  toolName?: string;
+  detail?: string;
+  status: 'pending' | 'submitting' | 'allowed' | 'denied' | 'error';
+  errorMessage?: string;
+};
+
+export type UserInputBlock = {
+  kind: 'user_input';
+  id: string;
+  createdAt?: string;
+  requestId: string;
+  prompt: string;
+  options?: string[];
+  status: 'pending' | 'submitted' | 'cancelled' | 'error';
+  answer?: string;
+  errorMessage?: string;
+};
+
+export type ChatBlock =
+  | {
+      kind: 'user';
+      id: string;
+      turnId?: string;
+      createdAt?: string;
+      text: string;
+      modelLabel?: string;
+    }
+  | {
+      kind: 'assistant';
+      id: string;
+      turnId?: string;
+      createdAt?: string;
+      text: string;
+    }
+  | {
+      kind: 'reasoning';
+      id: string;
+      createdAt?: string;
+      text: string;
+    }
+  | ToolBlock
+  | ApprovalBlock
+  | UserInputBlock
+  | {
+      kind: 'system';
+      id: string;
+      createdAt?: string;
+      text: string;
+      code?: string;
+      detail?: string;
+    }
+  | {
+      kind: 'error';
+      id: string;
+      createdAt?: string;
+      text: string;
+    }
+  | {
+      kind: 'compaction';
+      id: string;
+      createdAt?: string;
+      summary: string;
+      status: 'running' | 'success' | 'error';
+      detail?: string;
+    };
+
+// ---- Legacy types (kept for API compatibility) ----
 
 export interface Approval {
   id: string;
@@ -49,14 +140,6 @@ export interface UserInputRequest {
   createdAt: string;
 }
 
-export interface ChatBlock {
-  id: string;
-  kind: 'user_text' | 'assistant_text' | 'tool_call' | 'tool_result' | 'error' | 'system';
-  content: string;
-  toolName?: string;
-  timestamp: string;
-}
-
 export interface SSEEvent {
   kind: string;
   data: any;
@@ -74,4 +157,12 @@ export interface UsageInfo {
   promptCacheMissTokens?: number;
   turns: number;
   cost?: number;
+}
+
+// ---- Turn grouping ----
+
+export interface Turn {
+  id: string;
+  userBlock?: ChatBlock & { kind: 'user' };
+  blocks: ChatBlock[];
 }

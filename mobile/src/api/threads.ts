@@ -46,9 +46,9 @@ function convertTurnItemsToChatBlocks(thread: KunThreadDetail): ChatBlock[] {
     if (turn.prompt) {
       blocks.push({
         id: `turn_${turn.id}_user`,
-        kind: 'user_text',
-        content: turn.prompt,
-        timestamp: turn.createdAt,
+        kind: 'user',
+        text: turn.prompt,
+        createdAt: turn.createdAt,
       });
     }
 
@@ -59,34 +59,37 @@ function convertTurnItemsToChatBlocks(thread: KunThreadDetail): ChatBlock[] {
         if (item.text !== turn.prompt) {
           blocks.push({
             id: item.id,
-            kind: 'user_text',
-            content: item.text,
-            timestamp: item.createdAt,
+            kind: 'user',
+            text: item.text,
+            createdAt: item.createdAt,
           });
         }
       } else if (item.kind === 'assistant_text' && item.text) {
         blocks.push({
           id: item.id,
-          kind: 'assistant_text',
-          content: item.text,
-          timestamp: item.createdAt,
+          kind: 'assistant',
+          text: item.text,
+          createdAt: item.createdAt,
         });
       } else if (item.kind === 'tool_call') {
         blocks.push({
           id: item.id,
-          kind: 'tool_call',
-          content: item.summary || `Calling ${item.toolName}...`,
+          kind: 'tool',
+          summary: item.summary || `Calling ${item.toolName}...`,
+          status: 'success',
           toolName: item.toolName,
-          timestamp: item.createdAt,
+          createdAt: item.createdAt,
         });
       } else if (item.kind === 'tool_result') {
         const output = typeof item.output === 'string' ? item.output : JSON.stringify(item.output, null, 2);
         blocks.push({
           id: item.id,
-          kind: 'tool_result',
-          content: output || '',
+          kind: 'tool',
+          summary: item.toolName || 'Tool',
+          status: item.isError ? 'error' : 'success',
           toolName: item.toolName,
-          timestamp: item.createdAt,
+          detail: output || undefined,
+          createdAt: item.createdAt,
         });
       }
     }

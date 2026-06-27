@@ -1,12 +1,18 @@
 import { create } from 'zustand';
-import type { ChatBlock, Approval, UserInputRequest, SSEEvent, TodoItem, UsageInfo } from '../types/api';
+import type {
+  ChatBlock,
+  ApprovalBlock,
+  UserInputBlock,
+  ToolBlock,
+  SSEEvent,
+  TodoItem,
+  UsageInfo,
+} from '../types/api';
 import { SSEClient } from '../api/sse';
 import { useThreadsStore } from './threads';
 
 interface EventsState {
   chatBlocks: Record<string, ChatBlock[]>;
-  approvals: Record<string, Approval[]>;
-  userInputs: Record<string, UserInputRequest[]>;
   usage: Record<string, UsageInfo>;
   sseClient: SSEClient | null;
 
@@ -14,8 +20,9 @@ interface EventsState {
   disconnectSSE: () => void;
   addChatBlock: (threadId: string, block: ChatBlock) => void;
   setChatBlocks: (threadId: string, blocks: ChatBlock[]) => void;
-  removeApproval: (threadId: string, approvalId: string) => void;
-  removeUserInput: (threadId: string, inputId: string) => void;
+  updateBlockStatus: (threadId: string, blockId: string, status: string) => void;
+  resolveApproval: (threadId: string, approvalId: string, status: 'allowed' | 'denied' | 'error', errorMessage?: string) => void;
+  resolveUserInput: (threadId: string, requestId: string, answer: string) => void;
   clearThread: (threadId: string) => void;
 }
 
@@ -42,8 +49,8 @@ function handleSSEEvent(
             {
               id: nextBlockId(),
               kind: 'system' as const,
-              content: 'Turn started...',
-              timestamp: new Date().toISOString(),
+              text: 'Turn started...',
+              createdAt: new Date().toISOString(),
             },
           ],
         },
@@ -57,8 +64,8 @@ function handleSSEEvent(
       set((state: EventsState) => {
         const blocks = [...(state.chatBlocks[threadId] || [])];
         const lastBlock = blocks[blocks.length - 1];
-        if (lastBlock && lastBlock.kind === 'assistant_text') {
-          blocks[blocks.length - 1] = { ...lastBlock, content: lastBlock.content + text };
+        if (lastBlock && lastBlock.kind === 'assistant') {
+          blocks[blocks.length - 1] = { ...lastBlock, text: lastBlock.text + text };
           return { chatBlocks: { ...state.chatBlocks, [threadId]: blocks } };
         }
         return {
@@ -68,9 +75,37 @@ function handleSSEEvent(
               ...blocks,
               {
                 id: nextBlockId(),
-                kind: 'assistant_text' as const,
-                content: text,
-                timestamp: new Date().toISOString(),
+                kind: 'assistant' as const,
+                text,
+                createdAt: new Date().toISOString(),
+              },
+            ],
+          },
+        };
+      });
+      break;
+    }
+
+    case 'reasoning_text': {
+      const text = data.text || data.content || data.delta || '';
+      if (!text) break;
+      set((state: EventsState) => {
+        const blocks = [...(state.chatBlocks[threadId] || [])];
+        const lastBlock = blocks[blocks.length - 1];
+        if (lastBlock && lastBlock.kind === 'reasoning') {
+          blocks[blocks.length - 1] = { ...lastBlock, text: lastBlock.text + text };
+          return { chatBlocks: { ...state.chatBlocks, [threadId]: blocks } };
+        }
+        return {
+          chatBlocks: {
+            ...state.chatBlocks,
+            [threadId]: [
+              ...blocks,
+              {
+                id: nextBlockId(),
+                kind: 'reasoning' as const,
+                text,
+                createdAt: new Date().toISOString(),
               },
             ],
           },
@@ -81,18 +116,21 @@ function handleSSEEvent(
 
     case 'tool_call_ready': {
       const toolName = data.name || data.tool || 'unknown';
+      const toolBlock: ToolBlock = {
+        id: nextBlockId(),
+        kind: 'tool',
+        summary: data.summary || `Running ${toolName}...`,
+        status: 'running',
+        toolName,
+        detail: data.detail,
+        createdAt: new Date().toISOString(),
+      };
       set((state: EventsState) => ({
         chatBlocks: {
           ...state.chatBlocks,
           [threadId]: [
             ...(state.chatBlocks[threadId] || []),
-            {
-              id: nextBlockId(),
-              kind: 'tool_call' as const,
-              content: data.summary || `Running ${toolName}...`,
-              toolName,
-              timestamp: new Date().toISOString(),
-            },
+            toolBlock,
           ],
         },
       }));
@@ -101,72 +139,85 @@ function handleSSEEvent(
 
     case 'tool_call_finished': {
       const toolName = data.name || data.tool || 'unknown';
+      set((state: EventsState) => {
+        const blocks = [...(state.chatBlocks[threadId] || [])];
+        // Find the last running tool block and update it
+        for (let i = blocks.length - 1; i >= 0; i--) {
+          const block = blocks[i];
+          if (block.kind === 'tool' && block.status === 'running') {
+            blocks[i] = {
+              ...block,
+              status: data.error ? 'error' : 'success',
+              summary: data.summary || block.summary,
+              detail: data.detail || data.result || block.detail,
+            };
+            break;
+          }
+        }
+        return { chatBlocks: { ...state.chatBlocks, [threadId]: blocks } };
+      });
+      break;
+    }
+
+    case 'approval_requested': {
+      const approvalBlock: ApprovalBlock = {
+        id: nextBlockId(),
+        kind: 'approval',
+        approvalId: data.id || data.approvalId || nextBlockId(),
+        summary: data.summary || data.message || 'Approval requested',
+        toolName: data.toolName || data.tool,
+        detail: data.detail || data.description,
+        status: 'pending',
+        createdAt: new Date().toISOString(),
+      };
       set((state: EventsState) => ({
         chatBlocks: {
           ...state.chatBlocks,
           [threadId]: [
             ...(state.chatBlocks[threadId] || []),
-            {
-              id: nextBlockId(),
-              kind: 'tool_result' as const,
-              content: data.summary || data.result || `✓ ${toolName} finished`,
-              toolName,
-              timestamp: new Date().toISOString(),
-            },
+            approvalBlock,
           ],
         },
       }));
       break;
     }
 
-    case 'approval_requested': {
-      const approval: Approval = {
-        id: data.id || data.approvalId || nextBlockId(),
-        threadId,
-        turnId: data.turnId || '',
-        kind: data.kind || data.type || 'approval',
-        summary: data.summary || data.message || 'Approval requested',
-        detail: data.detail || data.description,
-        createdAt: new Date().toISOString(),
-      };
-      set((state: EventsState) => ({
-        approvals: {
-          ...state.approvals,
-          [threadId]: [...(state.approvals[threadId] || []), approval],
-        },
-      }));
-      break;
-    }
-
     case 'user_input_requested': {
-      const input: UserInputRequest = {
-        id: data.id || data.inputId || nextBlockId(),
-        threadId,
-        turnId: data.turnId || '',
+      const inputBlock: UserInputBlock = {
+        id: nextBlockId(),
+        kind: 'user_input',
+        requestId: data.id || data.inputId || nextBlockId(),
         prompt: data.prompt || data.message || 'Input requested',
         options: data.options,
+        status: 'pending',
         createdAt: new Date().toISOString(),
       };
       set((state: EventsState) => ({
-        userInputs: {
-          ...state.userInputs,
-          [threadId]: [...(state.userInputs[threadId] || []), input],
+        chatBlocks: {
+          ...state.chatBlocks,
+          [threadId]: [
+            ...(state.chatBlocks[threadId] || []),
+            inputBlock,
+          ],
         },
       }));
       break;
     }
 
     case 'user_input_resolved': {
-      const inputId = data.id || data.inputId;
-      if (inputId) {
-        set((state: EventsState) => ({
-          userInputs: {
-            ...state.userInputs,
-            [threadId]: (state.userInputs[threadId] || []).filter(
-              (u: UserInputRequest) => u.id !== inputId,
-            ),
-          },
-        }));
+      const requestId = data.id || data.inputId;
+      if (requestId) {
+        set((state: EventsState) => {
+          const blocks = [...(state.chatBlocks[threadId] || [])];
+          for (let i = blocks.length - 1; i >= 0; i--) {
+            const block = blocks[i];
+            if (block.kind === 'user_input' && block.requestId === requestId) {
+              blocks[i] = { ...block, status: 'submitted' };
+              break;
+            }
+          }
+          return { chatBlocks: { ...state.chatBlocks, [threadId]: blocks } };
+        });
       }
       break;
     }
@@ -209,8 +260,8 @@ function handleSSEEvent(
             {
               id: nextBlockId(),
               kind: 'system' as const,
-              content: 'Turn completed',
-              timestamp: new Date().toISOString(),
+              text: 'Turn completed',
+              createdAt: new Date().toISOString(),
             },
           ],
         },
@@ -228,8 +279,8 @@ function handleSSEEvent(
             {
               id: nextBlockId(),
               kind: 'error' as const,
-              content: data.error || data.message || 'Turn failed',
-              timestamp: new Date().toISOString(),
+              text: data.error || data.message || 'Turn failed',
+              createdAt: new Date().toISOString(),
             },
           ],
         },
@@ -246,8 +297,8 @@ function handleSSEEvent(
             {
               id: nextBlockId(),
               kind: 'error' as const,
-              content: data.message || data.error || 'An error occurred',
-              timestamp: new Date().toISOString(),
+              text: data.message || data.error || 'An error occurred',
+              createdAt: new Date().toISOString(),
             },
           ],
         },
@@ -259,8 +310,6 @@ function handleSSEEvent(
 
 export const useEventsStore = create<EventsState>((set, get) => ({
   chatBlocks: {},
-  approvals: {},
-  userInputs: {},
   usage: {},
   sseClient: null,
 
@@ -280,7 +329,6 @@ export const useEventsStore = create<EventsState>((set, get) => ({
         handleSSEEvent(event, set, get);
       },
       (status) => {
-        // Lazy require to avoid circular dependency
         const { useConnectionStore } = require('./connection');
         if (status === 'connected') {
           useConnectionStore.getState().setStatus('connected');
@@ -321,42 +369,53 @@ export const useEventsStore = create<EventsState>((set, get) => ({
     }));
   },
 
-  removeApproval: (threadId, approvalId) => {
-    set((state) => ({
-      approvals: {
-        ...state.approvals,
-        [threadId]: (state.approvals[threadId] || []).filter(
-          (a) => a.id !== approvalId,
-        ),
-      },
-    }));
+  updateBlockStatus: (threadId, blockId, status) => {
+    set((state) => {
+      const blocks = [...(state.chatBlocks[threadId] || [])];
+      const index = blocks.findIndex((b) => b.id === blockId);
+      if (index !== -1) {
+        blocks[index] = { ...blocks[index], status } as any;
+      }
+      return { chatBlocks: { ...state.chatBlocks, [threadId]: blocks } };
+    });
   },
 
-  removeUserInput: (threadId, inputId) => {
-    set((state) => ({
-      userInputs: {
-        ...state.userInputs,
-        [threadId]: (state.userInputs[threadId] || []).filter(
-          (u) => u.id !== inputId,
-        ),
-      },
-    }));
+  resolveApproval: (threadId, approvalId, status, errorMessage) => {
+    set((state) => {
+      const blocks = [...(state.chatBlocks[threadId] || [])];
+      for (let i = blocks.length - 1; i >= 0; i--) {
+        const block = blocks[i];
+        if (block.kind === 'approval' && block.approvalId === approvalId) {
+          blocks[i] = { ...block, status, errorMessage };
+          break;
+        }
+      }
+      return { chatBlocks: { ...state.chatBlocks, [threadId]: blocks } };
+    });
+  },
+
+  resolveUserInput: (threadId, requestId, answer) => {
+    set((state) => {
+      const blocks = [...(state.chatBlocks[threadId] || [])];
+      for (let i = blocks.length - 1; i >= 0; i--) {
+        const block = blocks[i];
+        if (block.kind === 'user_input' && block.requestId === requestId) {
+          blocks[i] = { ...block, status: 'submitted', answer };
+          break;
+        }
+      }
+      return { chatBlocks: { ...state.chatBlocks, [threadId]: blocks } };
+    });
   },
 
   clearThread: (threadId) => {
     set((state) => {
       const newBlocks = { ...state.chatBlocks };
       delete newBlocks[threadId];
-      const newApprovals = { ...state.approvals };
-      delete newApprovals[threadId];
-      const newInputs = { ...state.userInputs };
-      delete newInputs[threadId];
       const newUsage = { ...state.usage };
       delete newUsage[threadId];
       return {
         chatBlocks: newBlocks,
-        approvals: newApprovals,
-        userInputs: newInputs,
         usage: newUsage,
       };
     });
