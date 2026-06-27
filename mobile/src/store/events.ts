@@ -13,6 +13,7 @@ interface EventsState {
   connectSSE: (baseUrl: string, token: string, threadId: string) => void;
   disconnectSSE: () => void;
   addChatBlock: (threadId: string, block: ChatBlock) => void;
+  setChatBlocks: (threadId: string, blocks: ChatBlock[]) => void;
   removeApproval: (threadId: string, approvalId: string) => void;
   removeUserInput: (threadId: string, inputId: string) => void;
   clearThread: (threadId: string) => void;
@@ -307,6 +308,15 @@ export const useEventsStore = create<EventsState>((set, get) => ({
       chatBlocks: {
         ...state.chatBlocks,
         [threadId]: [...(state.chatBlocks[threadId] || []), block],
+      },
+    }));
+  },
+
+  setChatBlocks: (threadId, blocks) => {
+    set((state) => ({
+      chatBlocks: {
+        ...state.chatBlocks,
+        [threadId]: blocks,
       },
     }));
   },

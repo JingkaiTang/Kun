@@ -47,6 +47,7 @@ export default function ThreadDetailScreen() {
   const removeApproval = useEventsStore((s) => s.removeApproval);
   const removeUserInput = useEventsStore((s) => s.removeUserInput);
   const addChatBlock = useEventsStore((s) => s.addChatBlock);
+  const setChatBlocks = useEventsStore((s) => s.setChatBlocks);
 
   const [message, setMessage] = useState('');
   const [sending, setSending] = useState(false);
@@ -58,7 +59,13 @@ export default function ThreadDetailScreen() {
   // Fetch thread detail and todos
   useEffect(() => {
     if (threadId && connectionStatus === 'connected') {
-      fetchThread(threadId);
+      fetchThread(threadId).then(() => {
+        // Load historical chat blocks from thread detail
+        const detail = useThreadsStore.getState().threadDetails[threadId];
+        if (detail?.chatBlocks) {
+          setChatBlocks(threadId, detail.chatBlocks);
+        }
+      });
       fetchTodos(threadId);
     }
   }, [threadId, connectionStatus]);
