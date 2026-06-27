@@ -168,6 +168,21 @@ export class MobileGateway {
   private handleRequest(req: IncomingMessage, res: ServerResponse): void {
     const start = Date.now()
 
+    // CORS headers for all responses
+    const corsHeaders: Record<string, string> = {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      'Access-Control-Max-Age': '86400'
+    }
+
+    // Handle CORS preflight
+    if (req.method === 'OPTIONS') {
+      res.writeHead(204, corsHeaders)
+      res.end()
+      return
+    }
+
     // 1. Auth (allow /health without token)
     const rawPath = req.url ?? '/'
     const isHealth = rawPath.replace(/^\/mobile/, '') === '/health' || rawPath === '/health'
@@ -175,7 +190,7 @@ export class MobileGateway {
       const authHeader = req.headers.authorization ?? ''
       const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : ''
       if (!validateToken(token, this.sessions)) {
-        res.writeHead(401, { 'content-type': 'text/plain' })
+        res.writeHead(401, { 'content-type': 'text/plain', ...corsHeaders })
         res.end('Unauthorized')
         this.log(`[mobile-gateway] ${req.method} ${req.url} → 401 (${Date.now() - start}ms)`)
         return
@@ -184,7 +199,7 @@ export class MobileGateway {
 
     // 2. Handle health check directly (no proxy to Kun API)
     if (isHealth) {
-      res.writeHead(200, { 'content-type': 'application/json' })
+      res.writeHead(200, { 'content-type': 'application/json', ...corsHeaders })
       res.end(JSON.stringify({ status: 'ok', service: 'mobile-gateway' }))
       this.log(`[mobile-gateway] ${req.method} ${req.url} → 200 (${Date.now() - start}ms)`)
       return
@@ -192,7 +207,7 @@ export class MobileGateway {
 
     // 3. Strip /mobile prefix
     if (!rawPath.startsWith('/mobile')) {
-      res.writeHead(404, { 'content-type': 'text/plain' })
+      res.writeHead(404, { 'content-type': 'text/plain', ...corsHeaders })
       res.end('Not Found')
       return
     }
@@ -200,7 +215,7 @@ export class MobileGateway {
 
     // 4. Whitelist check
     if (!matchWhitelist(req.method, targetPath)) {
-      res.writeHead(404, { 'content-type': 'text/plain' })
+      res.writeHead(404, { 'content-type': 'text/plain', ...corsHeaders })
       res.end('Not Found')
       this.log(`[mobile-gateway] ${req.method} ${targetPath} → 404 (whitelist) ${Date.now() - start}ms`)
       return
@@ -217,14 +232,16 @@ export class MobileGateway {
     }
 
     const proxyReq = httpRequest(options, (proxyRes) => {
-      res.writeHead(proxyRes.statusCode ?? 200, proxyRes.headers)
+      // Merge CORS headers with upstream response headers
+      const mergedHeaders = { ...proxyRes.headers, ...corsHeaders }
+      res.writeHead(proxyRes.statusCode ?? 200, mergedHeaders)
       proxyRes.pipe(res)  // SSE streaming works through pipe
     })
 
     proxyReq.on('error', (err) => {
       this.log(`[mobile-gateway] proxy error: ${err.message}`)
       if (!res.headersSent) {
-        res.writeHead(502, { 'content-type': 'text/plain' })
+        res.writeHead(502, { 'content-type': 'text/plain', ...corsHeaders })
         res.end('Bad Gateway')
       }
     })
