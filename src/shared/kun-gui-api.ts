@@ -1,3 +1,4 @@
+import type { MobileSessionV1 } from './mobile-api-types'
 import type {
   AppSettingsPatch,
   AppSettingsV1,
@@ -512,4 +513,15 @@ export type KunGuiApi = {
   disposeTerminal: (sessionId: string) => Promise<boolean>
   onTerminalData: (handler: (payload: TerminalDataPayload) => void) => () => void
   onTerminalExit: (handler: (payload: TerminalExitPayload) => void) => () => void
+  mobileGetStatus: () => Promise<{
+    gatewayEnabled: boolean
+    port: number
+    sessions: MobileSessionV1[]
+    lanIp: string
+  }>
+  mobileStartGateway: () => Promise<{ port: number }>
+  mobileStopGateway: () => Promise<void>
+  mobileCreateSession: (name: string) => Promise<MobileSessionV1>
+  mobileRefreshToken: (id: string) => Promise<MobileSessionV1>
+  mobileRevokeSession: (id: string) => Promise<void>
 }

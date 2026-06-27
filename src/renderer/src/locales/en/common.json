@@ -55,6 +55,8 @@
   "mobileGatewayPort": "Gateway Port",
   "mobileCopy": "Copy",
   "mobileCopied": "Copied!",
+  "mobileShowToken": "Show/hide token",
+  "mobileCopyToken": "Copy token",
   "mobilePairedDevices": "Paired Devices",
   "mobileAddDevice": "Add Device",
   "mobileNoDevices": "No paired devices yet",

@@ -1,16 +1,7 @@
 import { useCallback, useEffect, useState, type ReactElement } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Smartphone, Copy, RefreshCw, Trash2, Plus, Check, AlertCircle } from 'lucide-react'
+import { Smartphone, Copy, RefreshCw, Trash2, Plus, Check, AlertCircle, X } from 'lucide-react'
 import type { MobileSessionV1 } from '@shared/mobile-api-types'
-
-// ---------------------------------------------------------------------------
-// IPC helpers — use the same bridge as other settings sections
-// ---------------------------------------------------------------------------
-
-async function ipc<T>(channel: string, payload?: unknown): Promise<T> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return (window as any).kunGui.invoke(channel, payload) as Promise<T>
-}
 
 // ---------------------------------------------------------------------------
 // Inline components (reuse patterns from settings-controls.tsx)
@@ -69,6 +60,8 @@ function Toggle({ enabled, onToggle, disabled = false }: { enabled: boolean; onT
 // Main component
 // ---------------------------------------------------------------------------
 
+const kunGui = window.kunGui
+
 export function MobileSettingsSection(): ReactElement {
   const { t } = useTranslation('common')
   const [loading, setLoading] = useState(true)
@@ -78,16 +71,26 @@ export function MobileSettingsSection(): ReactElement {
   const [sessions, setSessions] = useState<MobileSessionV1[]>([])
   const [lanIp, setLanIp] = useState('127.0.0.1')
   const [newToken, setNewToken] = useState<string | null>(null)
+  const [revealedTokens, setRevealedTokens] = useState<Set<string>>(new Set())
   const [actionLoading, setActionLoading] = useState(false)
+  const [showAddDevice, setShowAddDevice] = useState(false)
+  const [newDeviceName, setNewDeviceName] = useState('')
+
+  const toggleRevealToken = useCallback((id: string) => {
+    setRevealedTokens((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) {
+        next.delete(id)
+      } else {
+        next.add(id)
+      }
+      return next
+    })
+  }, [])
 
   const loadStatus = useCallback(async () => {
     try {
-      const status = await ipc<{
-        gatewayEnabled: boolean
-        port: number
-        sessions: MobileSessionV1[]
-        lanIp: string
-      }>('mobile:getStatus')
+      const status = await kunGui.mobileGetStatus()
       setGatewayEnabled(status.gatewayEnabled)
       setGatewayPort(status.port)
       setSessions(status.sessions)
@@ -109,11 +112,11 @@ export function MobileSettingsSection(): ReactElement {
     setError(null)
     try {
       if (gatewayEnabled) {
-        await ipc('mobile:stopGateway')
+        await kunGui.mobileStopGateway()
         setGatewayEnabled(false)
         setGatewayPort(0)
       } else {
-        const result = await ipc<{ port: number }>('mobile:startGateway')
+        const result = await kunGui.mobileStartGateway()
         setGatewayEnabled(true)
         setGatewayPort(result.port)
       }
@@ -128,26 +131,28 @@ export function MobileSettingsSection(): ReactElement {
   }, [gatewayEnabled, t])
 
   const handleAddDevice = useCallback(async () => {
-    const name = prompt(t('mobilePromptDeviceName'))
-    if (!name?.trim()) return
+    const name = newDeviceName.trim()
+    if (!name) return
     setActionLoading(true)
     setError(null)
     try {
-      const session = await ipc<MobileSessionV1>('mobile:createSession', { name: name.trim() })
+      const session = await kunGui.mobileCreateSession(name)
       setSessions((prev) => [...prev, session])
       setNewToken(session.token)
+      setShowAddDevice(false)
+      setNewDeviceName('')
     } catch (e) {
       setError(e instanceof Error ? e.message : t('mobileFailedToCreate'))
     } finally {
       setActionLoading(false)
     }
-  }, [t])
+  }, [newDeviceName, t])
 
   const handleRefreshToken = useCallback(async (id: string) => {
     setActionLoading(true)
     setError(null)
     try {
-      const updated = await ipc<MobileSessionV1>('mobile:refreshToken', { id })
+      const updated = await kunGui.mobileRefreshToken(id)
       setSessions((prev) => prev.map((s) => (s.id === id ? updated : s)))
       setNewToken(updated.token)
     } catch (e) {
@@ -162,7 +167,7 @@ export function MobileSettingsSection(): ReactElement {
     setActionLoading(true)
     setError(null)
     try {
-      await ipc('mobile:revokeSession', { id })
+      await kunGui.mobileRevokeSession(id)
       setSessions((prev) => prev.filter((s) => s.id !== id))
     } catch (e) {
       setError(e instanceof Error ? e.message : t('mobileFailedToRevoke'))
@@ -259,8 +264,8 @@ export function MobileSettingsSection(): ReactElement {
           <h3 className="text-[14px] font-medium text-ds-ink">{t('mobilePairedDevices')}</h3>
           <button
             type="button"
-            onClick={handleAddDevice}
-            disabled={actionLoading}
+            onClick={() => { setShowAddDevice(true); setNewDeviceName('') }}
+            disabled={actionLoading || showAddDevice}
             className="flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-[12px] font-medium text-white transition hover:bg-accent/90 disabled:opacity-50"
           >
             <Plus className="h-3 w-3" />
@@ -268,46 +273,95 @@ export function MobileSettingsSection(): ReactElement {
           </button>
         </div>
 
-        {sessions.length === 0 ? (
-          <p className="mt-4 text-center text-[13px] text-ds-faint">{t('mobileNoDevices')}</p>
-        ) : (
-          <div className="mt-3 flex flex-col gap-2">
-            {sessions.map((session) => (
-              <div
-                key={session.id}
-                className="flex items-center justify-between rounded-lg border border-ds-border bg-ds-subtle px-3 py-2.5"
-              >
-                <div className="min-w-0 flex-1">
-                  <div className="text-[13px] font-medium text-ds-ink">{session.name}</div>
-                  <div className="mt-0.5 flex items-center gap-3 text-[11px] text-ds-faint">
-                    <span>{t('mobileDeviceToken')}: {session.token.slice(0, 8)}...{session.token.slice(-4)}</span>
-                    <span>{t('mobileDeviceCreated')}: {new Date(session.createdAt).toLocaleDateString()}</span>
-                  </div>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => handleRefreshToken(session.id)}
-                    disabled={actionLoading}
-                    title={t('mobileRefreshToken')}
-                    className="rounded-lg p-1.5 text-ds-muted transition hover:bg-ds-hover hover:text-ds-ink disabled:opacity-50"
-                  >
-                    <RefreshCw className="h-3.5 w-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleRevoke(session.id)}
-                    disabled={actionLoading}
-                    title={t('mobileRevoke')}
-                    className="rounded-lg p-1.5 text-ds-muted transition hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              </div>
-            ))}
+        {/* Inline add-device form */}
+        {showAddDevice && (
+          <div className="mt-3 flex items-center gap-2 rounded-lg border border-accent/30 bg-accent/5 px-3 py-2.5">
+            <input
+              type="text"
+              value={newDeviceName}
+              onChange={(e) => setNewDeviceName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') void handleAddDevice() }}
+              placeholder={t('mobilePromptDeviceName')}
+              autoFocus
+              className="min-w-0 flex-1 rounded-lg border border-ds-border bg-white px-2.5 py-1.5 text-[13px] text-ds-ink outline-none focus:border-accent"
+            />
+            <button
+              type="button"
+              onClick={handleAddDevice}
+              disabled={actionLoading || !newDeviceName.trim()}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-[12px] font-medium text-white transition hover:bg-accent/90 disabled:opacity-50"
+            >
+              {actionLoading ? <RefreshCw className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
+              {t('confirm')}
+            </button>
+            <button
+              type="button"
+              onClick={() => { setShowAddDevice(false); setNewDeviceName('') }}
+              className="rounded-lg p-1.5 text-ds-muted transition hover:bg-ds-hover hover:text-ds-ink"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
           </div>
         )}
+
+        {sessions.length === 0 && !showAddDevice ? (
+          <p className="mt-4 text-center text-[13px] text-ds-faint">{t('mobileNoDevices')}</p>
+        ) : sessions.length > 0 ? (
+          <div className="mt-3 flex flex-col gap-2">
+            {sessions.map((session) => {
+              const revealed = revealedTokens.has(session.id)
+              const tokenDisplay = revealed
+                ? session.token
+                : `${session.token.slice(0, 8)}...${session.token.slice(-4)}`
+              return (
+                <div
+                  key={session.id}
+                  className="flex items-center justify-between rounded-lg border border-ds-border bg-ds-subtle px-3 py-2.5"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[13px] font-medium text-ds-ink">{session.name}</div>
+                    <div className="mt-0.5 flex items-center gap-3 text-[11px] text-ds-faint">
+                      <button
+                        type="button"
+                        onClick={() => toggleRevealToken(session.id)}
+                        className="font-mono transition hover:text-ds-ink"
+                        title={t('mobileShowToken')}
+                      >
+                        {t('mobileDeviceToken')}: {tokenDisplay}
+                      </button>
+                      <span>{t('mobileDeviceCreated')}: {new Date(session.createdAt).toLocaleDateString()}</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <CopyButton
+                      text={session.token}
+                      label={t('mobileCopyToken')}
+                      copiedLabel={t('mobileCopied')}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleRefreshToken(session.id)}
+                      disabled={actionLoading}
+                      title={t('mobileRefreshToken')}
+                      className="rounded-lg p-1.5 text-ds-muted transition hover:bg-ds-hover hover:text-ds-ink disabled:opacity-50"
+                    >
+                      <RefreshCw className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleRevoke(session.id)}
+                      disabled={actionLoading}
+                      title={t('mobileRevoke')}
+                      className="rounded-lg p-1.5 text-ds-muted transition hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        ) : null}
       </div>
 
       {/* Connection instructions */}

@@ -287,6 +287,15 @@ const api = {
   showTurnCompleteNotification: (payload) => ipcRenderer.invoke('notification:turn-complete', payload),
   getAppVersion: () => ipcRenderer.invoke('app:version'),
   getGuiUpdateState: () => ipcRenderer.invoke('gui:update-state'),
+  mobileGetStatus: () => ipcRenderer.invoke('mobile:getStatus'),
+  mobileStartGateway: () => ipcRenderer.invoke('mobile:startGateway'),
+  mobileStopGateway: () => ipcRenderer.invoke('mobile:stopGateway'),
+  mobileCreateSession: (name: string) =>
+    ipcRenderer.invoke('mobile:createSession', { name }),
+  mobileRefreshToken: (id: string) =>
+    ipcRenderer.invoke('mobile:refreshToken', { id }),
+  mobileRevokeSession: (id: string) =>
+    ipcRenderer.invoke('mobile:revokeSession', { id }),
   checkGuiUpdate: (channel) =>
     ipcRenderer.invoke('gui:update-check', channel),
   downloadGuiUpdate: (channel) =>

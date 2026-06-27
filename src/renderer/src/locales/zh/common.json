@@ -55,6 +55,8 @@
   "mobileGatewayPort": "网关端口",
   "mobileCopy": "复制",
   "mobileCopied": "已复制！",
+  "mobileShowToken": "显示/隐藏 Token",
+  "mobileCopyToken": "复制 Token",
   "mobilePairedDevices": "已配对设备",
   "mobileAddDevice": "添加设备",
   "mobileNoDevices": "暂无已配对设备",
