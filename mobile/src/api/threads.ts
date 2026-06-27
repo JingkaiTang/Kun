@@ -1,8 +1,13 @@
 import { apiFetch } from './client';
 import type { ThreadSummary, ThreadDetail, TodoItem } from '../types/api';
 
+interface ListThreadsResponse {
+  threads: ThreadSummary[];
+}
+
 export async function listThreads(): Promise<ThreadSummary[]> {
-  return apiFetch<ThreadSummary[]>('/v1/threads');
+  const response = await apiFetch<ListThreadsResponse>('/v1/threads');
+  return response.threads;
 }
 
 export async function getThread(id: string): Promise<ThreadDetail> {
