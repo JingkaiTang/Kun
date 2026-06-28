@@ -46,6 +46,8 @@ const WHITELIST: WhitelistEntry[] = [
   { method: 'GET',    pattern: '/v1/threads' },
   { method: 'GET',    pattern: '/v1/threads/{id}' },
   { method: 'GET',    pattern: '/v1/threads/{id}/todos' },
+  { method: 'POST',   pattern: '/v1/threads/{id}/todos' },
+  { method: 'DELETE', pattern: '/v1/threads/{id}/todos' },
   { method: 'GET',    pattern: '/v1/threads/{id}/events' },
   { method: 'POST',   pattern: '/v1/threads/{id}/turns' },
   { method: 'POST',   pattern: '/v1/threads/{id}/turns/{turn}/interrupt' },

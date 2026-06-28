@@ -147,6 +147,40 @@ describe('MobileGateway', () => {
     expect(data.path).toBe('/v1/threads')
   })
 
+  it('proxies POST /v1/threads/{id}/todos (full-list replacement)', async () => {
+    const session = createSession('Test Device')
+    gateway = new MobileGateway(mockSettingsStore, [session], mockLog)
+    const port = await gateway.start()
+
+    const res = await fetch(`http://127.0.0.1:${port}/mobile/v1/threads/test-thread/todos`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${session.token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ todos: [] })
+    })
+    expect(res.status).toBe(200)
+    const data = await res.json()
+    expect(data.path).toBe('/v1/threads/test-thread/todos')
+    expect(data.method).toBe('POST')
+  })
+
+  it('proxies DELETE /v1/threads/{id}/todos (clear all)', async () => {
+    const session = createSession('Test Device')
+    gateway = new MobileGateway(mockSettingsStore, [session], mockLog)
+    const port = await gateway.start()
+
+    const res = await fetch(`http://127.0.0.1:${port}/mobile/v1/threads/test-thread/todos`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${session.token}` }
+    })
+    expect(res.status).toBe(200)
+    const data = await res.json()
+    expect(data.path).toBe('/v1/threads/test-thread/todos')
+    expect(data.method).toBe('DELETE')
+  })
+
   it('handles SSE pass-through', async () => {
     const session = createSession('Test Device')
     gateway = new MobileGateway(mockSettingsStore, [session], mockLog)
