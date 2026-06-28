@@ -1,8 +1,12 @@
 import { apiFetch } from './client';
-import type { ThreadSummary, ThreadDetail, TodoItem, ChatBlock } from '../types/api';
+import type { ThreadSummary, ThreadDetail, ThreadTodoList, ChatBlock } from '../types/api';
 
 interface ListThreadsResponse {
   threads: ThreadSummary[];
+}
+
+interface ThreadTodosResponse {
+  todos: ThreadTodoList | null;
 }
 
 // Kun API turn item types
@@ -104,6 +108,7 @@ export async function getThread(id: string): Promise<ThreadDetail & { chatBlocks
   return { ...thread, chatBlocks };
 }
 
-export async function getThreadTodos(id: string): Promise<TodoItem[]> {
-  return apiFetch<TodoItem[]>(`/v1/threads/${id}/todos`);
+export async function getThreadTodos(id: string): Promise<ThreadTodoList | null> {
+  const response = await apiFetch<ThreadTodosResponse>(`/v1/threads/${id}/todos`);
+  return response.todos ?? null;
 }

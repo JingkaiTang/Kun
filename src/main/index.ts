@@ -216,6 +216,7 @@ let clawRuntime: ClawRuntime | null = null
 let scheduleRuntime: ScheduleRuntime | null = null
 let telegramRuntime: TelegramRuntime | null = null
 let workflowRuntime: WorkflowRuntime | null = null
+let mobileGateway: MobileGateway | null = null
 let managedRuntimesStoppedForQuit = false
 let managedRuntimesStopPromise: Promise<void> | null = null
 let appBehavior: AppBehaviorConfigV1 = normalizeAppBehaviorSettings()
@@ -295,6 +296,11 @@ async function stopManagedRuntimes(): Promise<void> {
       telegramRuntime?.stop()
       stopWeixinBridgeRuntime()
       await kunRuntimeAdapter.stopAndWait()
+      await mobileGateway?.stop().catch((error) => {
+        logError('mobile-gateway', 'Failed to stop mobile gateway on quit', {
+          message: error instanceof Error ? error.message : String(error)
+        })
+      })
     })().finally(() => {
       managedRuntimesStopPromise = null
     })
@@ -1547,28 +1553,24 @@ app.whenReady().then(async () => {
   configureManagedWeixinBridgeUrlResolver(ensureWeixinBridgeRpcUrl)
   syncWeixinBridgeRuntime(initial)
 
-  // Mobile Gateway lifecycle
-  let mobileGateway: MobileGateway | null = null
+  // Mobile Gateway lifecycle — app startup auto-start when gatewayEnabled
+  // The instance is module-level so IPC handlers (getMobileGateway/setMobileGateway)
+  // share the same reference. Teardown is handled in stopManagedRuntimes().
   if (initial.mobile.gatewayEnabled) {
     try {
-      mobileGateway = new MobileGateway(store, initial.mobile.sessions, logError)
+      mobileGateway = new MobileGateway(
+        store,
+        initial.mobile.sessions,
+        (msg) => logError('mobile-gateway', msg)
+      )
       await mobileGateway.start()
     } catch (error) {
       logError('mobile-gateway', 'Failed to start mobile gateway on startup', {
         message: error instanceof Error ? error.message : String(error)
       })
+      mobileGateway = null
     }
   }
-
-  app.on('before-quit', () => {
-    if (mobileGateway) {
-      mobileGateway.stop().catch((error) => {
-        logError('mobile-gateway', 'Failed to stop mobile gateway on quit', {
-          message: error instanceof Error ? error.message : String(error)
-        })
-      })
-    }
-  })
 
   traceStartup('ipc registration:start')
   const applySettingsPatch = async (partial: AppSettingsPatch): Promise<AppSettingsV1> => {
@@ -1623,6 +1625,9 @@ app.whenReady().then(async () => {
         message: error instanceof Error ? error.message : String(error)
       })
     }
+    if (mobileGateway) {
+      mobileGateway.updateSessions(saved.mobile.sessions)
+    }
     syncWeixinBridgeRuntime(saved)
     syncLoginItemSettings(saved)
     syncTray(saved)
@@ -1657,6 +1662,10 @@ app.whenReady().then(async () => {
     getClawRuntime: () => clawRuntime,
     getScheduleRuntime: () => scheduleRuntime,
     getWorkflowRuntime: () => workflowRuntime,
+    getMobileGateway: () => mobileGateway,
+    setMobileGateway: (gateway) => {
+      mobileGateway = gateway
+    },
     startFeishuInstallQrcode,
     pollFeishuInstall,
     startWeixinInstallQrcode,

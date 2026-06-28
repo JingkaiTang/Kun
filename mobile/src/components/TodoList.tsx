@@ -11,14 +11,12 @@ const STATUS_ICON: Record<string, keyof typeof MaterialIcons.glyphMap> = {
   pending: 'radio-button-unchecked',
   in_progress: 'autorenew',
   completed: 'check-circle',
-  failed: 'cancel',
 };
 
 const STATUS_COLOR: Record<string, string> = {
   pending: '#8492b1',
   in_progress: '#3b82d8',
   completed: '#128a4a',
-  failed: '#d6493f',
 };
 
 export function TodoList({ todos }: Props) {
@@ -26,7 +24,6 @@ export function TodoList({ todos }: Props) {
 
   if (!todos || todos.length === 0) return null;
 
-  const sorted = [...todos].sort((a, b) => a.order - b.order);
   const completedCount = todos.filter((t) => t.status === 'completed').length;
 
   return (
@@ -48,7 +45,7 @@ export function TodoList({ todos }: Props) {
       </TouchableOpacity>
 
       {!collapsed &&
-        sorted.map((todo) => (
+        todos.map((todo) => (
           <View key={todo.id} style={styles.item}>
             <MaterialIcons
               name={STATUS_ICON[todo.status] || 'radio-button-unchecked'}
@@ -59,11 +56,10 @@ export function TodoList({ todos }: Props) {
               style={[
                 styles.itemText,
                 todo.status === 'completed' && styles.itemCompleted,
-                todo.status === 'failed' && styles.itemFailed,
               ]}
               numberOfLines={2}
             >
-              {todo.text}
+              {todo.content}
             </Text>
           </View>
         ))}
@@ -108,8 +104,5 @@ const styles = StyleSheet.create({
   itemCompleted: {
     textDecorationLine: 'line-through',
     color: '#8492b1',
-  },
-  itemFailed: {
-    color: '#d6493f',
   },
 });

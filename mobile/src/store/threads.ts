@@ -47,9 +47,9 @@ export const useThreadsStore = create<ThreadsState>((set) => ({
 
   fetchTodos: async (threadId: string) => {
     try {
-      const todos = await getThreadTodos(threadId);
+      const todoList = await getThreadTodos(threadId);
       set((state) => ({
-        todos: { ...state.todos, [threadId]: todos },
+        todos: { ...state.todos, [threadId]: todoList?.items ?? [] },
       }));
     } catch (err: any) {
       console.error('Failed to fetch todos:', err);

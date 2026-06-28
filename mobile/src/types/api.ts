@@ -5,12 +5,11 @@ export interface ThreadSummary {
   id: string;
   title: string;
   model?: string;
-  status: 'active' | 'completed' | 'failed' | 'idle';
+  status: 'idle' | 'running' | 'archived' | 'deleted';
   createdAt: string;
   updatedAt: string;
-  turnCount?: number;
-  todoCount?: number;
-  completedTodoCount?: number;
+  /** Kun 在列表与详情里都内嵌完整 todo 列表，可据此计算进度。 */
+  todos?: ThreadTodoList | null;
 }
 
 export interface ThreadDetail extends ThreadSummary {
@@ -25,11 +24,27 @@ export interface TurnSummary {
   createdAt: string;
 }
 
+/** Kun 的 todo item：字段对齐 kun/src/contracts/threads.ts 的 ThreadTodoItemSchema。 */
 export interface TodoItem {
   id: string;
-  text: string;
-  status: 'pending' | 'in_progress' | 'completed' | 'failed';
-  order: number;
+  content: string;
+  status: 'pending' | 'in_progress' | 'completed';
+  source?: {
+    kind: 'plan';
+    planId: string;
+    relativePath?: string;
+    ordinal: number;
+    contentHash?: string;
+  };
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Kun 的 todo list 聚合：对齐 ThreadTodoListSchema。 */
+export interface ThreadTodoList {
+  threadId: string;
+  items: TodoItem[];
+  updatedAt: string;
 }
 
 // ---- ChatBlock types (aligned with desktop) ----

@@ -223,8 +223,10 @@ function handleSSEEvent(
     }
 
     case 'todos_updated': {
-      const todos: TodoItem[] = data.todos || data.items || [];
-      useThreadsStore.getState().updateTodos(threadId, todos);
+      // Kun 的 TodoEvent.todos 是 ThreadTodoList | null（{ threadId, items, updatedAt }），
+      // 不是裸 TodoItem 数组。
+      const items: TodoItem[] = data.todos?.items ?? [];
+      useThreadsStore.getState().updateTodos(threadId, items);
       break;
     }
 

@@ -9,18 +9,18 @@ interface Props {
 }
 
 const STATUS_COLORS: Record<string, string> = {
-  active: '#128a4a',
-  completed: '#3b82d8',
-  failed: '#d6493f',
+  running: '#3b82d8',
   idle: '#8492b1',
+  archived: '#8492b1',
+  deleted: '#d6493f',
 };
 
 export function ThreadCard({ thread, onPress }: Props) {
   const statusColor = STATUS_COLORS[thread.status] || STATUS_COLORS.idle;
-  const todoPercent =
-    thread.todoCount && thread.todoCount > 0
-      ? Math.round(((thread.completedTodoCount || 0) / thread.todoCount) * 100)
-      : null;
+  const todoItems = thread.todos?.items ?? [];
+  const total = todoItems.length;
+  const completed = todoItems.filter((t) => t.status === 'completed').length;
+  const todoPercent = total > 0 ? Math.round((completed / total) * 100) : null;
 
   return (
     <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.7}>
@@ -44,7 +44,7 @@ export function ThreadCard({ thread, onPress }: Props) {
             <View style={[styles.progressFill, { width: `${todoPercent}%` }]} />
           </View>
           <Text style={styles.todoText}>
-            {thread.completedTodoCount}/{thread.todoCount}
+            {completed}/{total}
           </Text>
         </View>
       ) : null}

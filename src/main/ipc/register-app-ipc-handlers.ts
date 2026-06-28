@@ -216,6 +216,8 @@ type RegisterAppIpcHandlersOptions = {
   getClawRuntime: () => ClawRuntime | null
   getScheduleRuntime: () => ScheduleRuntime | null
   getWorkflowRuntime: () => WorkflowRuntime | null
+  getMobileGateway: () => MobileGateway | null
+  setMobileGateway: (gateway: MobileGateway | null) => void
   startFeishuInstallQrcode: (isLark: boolean) => Promise<ClawImInstallQrResult>
   pollFeishuInstall: (deviceCode: string) => Promise<ClawImInstallPollResult>
   startWeixinInstallQrcode: (weixinBridgeUrl?: string) => Promise<ClawImInstallQrResult>
@@ -393,6 +395,8 @@ export function registerAppIpcHandlers(options: RegisterAppIpcHandlersOptions): 
     getClawRuntime,
     getScheduleRuntime,
     getWorkflowRuntime,
+    getMobileGateway,
+    setMobileGateway,
     startFeishuInstallQrcode,
     pollFeishuInstall,
     startWeixinInstallQrcode,
@@ -1363,14 +1367,14 @@ export function registerAppIpcHandlers(options: RegisterAppIpcHandlersOptions): 
     return { ok: true }
   })
 
-  // Mobile Gateway IPC handlers
-  let mobileGateway: MobileGateway | null = null
-
+  // Mobile Gateway IPC handlers — share the module-level instance via
+  // getMobileGateway/setMobileGateway so the app startup auto-start path
+  // and IPC-driven start/stop operate on the same object.
   ipcMain.handle('mobile:getStatus', async () => {
     const settings = await store.load()
     return {
       gatewayEnabled: settings.mobile.gatewayEnabled,
-      port: mobileGateway?.activePort ?? 0,
+      port: getMobileGateway()?.activePort ?? 0,
       sessions: settings.mobile.sessions,
       lanIp: getLanIp()
     }
@@ -1379,16 +1383,18 @@ export function registerAppIpcHandlers(options: RegisterAppIpcHandlersOptions): 
   ipcMain.handle('mobile:startGateway', async () => {
     try {
       const settings = await store.load()
-      if (!mobileGateway) {
-        mobileGateway = new MobileGateway(
+      let gateway = getMobileGateway()
+      if (!gateway) {
+        gateway = new MobileGateway(
           store,
           settings.mobile.sessions,
-          logError
+          (msg) => logError('mobile-gateway', msg)
         )
+        setMobileGateway(gateway)
       } else {
-        mobileGateway.updateSessions(settings.mobile.sessions)
+        gateway.updateSessions(settings.mobile.sessions)
       }
-      const port = await mobileGateway.start()
+      const port = await gateway.start()
       await store.patch({ mobile: { ...settings.mobile, gatewayEnabled: true } })
       return { port }
     } catch (error) {
@@ -1400,8 +1406,9 @@ export function registerAppIpcHandlers(options: RegisterAppIpcHandlersOptions): 
 
   ipcMain.handle('mobile:stopGateway', async () => {
     try {
-      if (mobileGateway) {
-        await mobileGateway.stop()
+      const gateway = getMobileGateway()
+      if (gateway) {
+        await gateway.stop()
       }
       const settings = await store.load()
       await store.patch({ mobile: { ...settings.mobile, gatewayEnabled: false } })
@@ -1419,9 +1426,7 @@ export function registerAppIpcHandlers(options: RegisterAppIpcHandlersOptions): 
       const settings = await store.load()
       const updatedSessions = [...settings.mobile.sessions, newSession]
       await store.patch({ mobile: { ...settings.mobile, sessions: updatedSessions } })
-      if (mobileGateway) {
-        mobileGateway.updateSessions(updatedSessions)
-      }
+      getMobileGateway()?.updateSessions(updatedSessions)
       return newSession
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
@@ -1436,9 +1441,7 @@ export function registerAppIpcHandlers(options: RegisterAppIpcHandlersOptions): 
       const settings = await store.load()
       const updatedSessions = refreshToken(request.id, settings.mobile.sessions)
       await store.patch({ mobile: { ...settings.mobile, sessions: updatedSessions } })
-      if (mobileGateway) {
-        mobileGateway.updateSessions(updatedSessions)
-      }
+      getMobileGateway()?.updateSessions(updatedSessions)
       const updatedSession = updatedSessions.find(s => s.id === request.id)
       return updatedSession!
     } catch (error) {
@@ -1454,9 +1457,7 @@ export function registerAppIpcHandlers(options: RegisterAppIpcHandlersOptions): 
       const settings = await store.load()
       const updatedSessions = revokeSession(request.id, settings.mobile.sessions)
       await store.patch({ mobile: { ...settings.mobile, sessions: updatedSessions } })
-      if (mobileGateway) {
-        mobileGateway.updateSessions(updatedSessions)
-      }
+      getMobileGateway()?.updateSessions(updatedSessions)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       logError('mobile-gateway', 'Failed to revoke session', { message })
