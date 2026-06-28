@@ -3,11 +3,12 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 const STORAGE_KEY_TOKEN = 'kun_token';
 const STORAGE_KEY_BASE_URL = 'kun_base_url';
 
-export interface ApiError {
-  status: number;
-  message: string;
-}
-
+/**
+ * Auth/network error callbacks. Wired by the connection store so the
+ * UI can react to gateway-wide failures. The KunRuntimeClient calls
+ * these directly when an HTTP call returns 401 or fails to connect;
+ * the old `apiFetch` wrapper is gone.
+ */
 let onAuthError: (() => void) | null = null;
 let onNetworkError: (() => void) | null = null;
 
@@ -17,6 +18,14 @@ export function setAuthErrorCallback(cb: () => void) {
 
 export function setNetworkErrorCallback(cb: () => void) {
   onNetworkError = cb;
+}
+
+export function notifyAuthError(): void {
+  onAuthError?.();
+}
+
+export function notifyNetworkError(): void {
+  onNetworkError?.();
 }
 
 export async function loadCredentials(): Promise<{ baseUrl: string; token: string } | null> {
@@ -44,62 +53,6 @@ export async function clearCredentials(): Promise<void> {
     AsyncStorage.removeItem(STORAGE_KEY_BASE_URL),
     AsyncStorage.removeItem(STORAGE_KEY_TOKEN),
   ]);
-}
-
-function getBaseUrl(): string {
-  const state = require('../store/connection').useConnectionStore.getState();
-  return state.baseUrl;
-}
-
-function getToken(): string {
-  const state = require('../store/connection').useConnectionStore.getState();
-  return state.token;
-}
-
-export async function apiFetch<T>(
-  path: string,
-  options: RequestInit = {}
-): Promise<T> {
-  const baseUrl = getBaseUrl();
-  const token = getToken();
-
-  if (!baseUrl || !token) {
-    throw { status: 0, message: 'Not configured' } as ApiError;
-  }
-
-  const url = `${baseUrl.replace(/\/+$/, '')}/mobile${path}`;
-
-  const headers: Record<string, string> = {
-    'Authorization': `Bearer ${token}`,
-    'Content-Type': 'application/json',
-    ...(options.headers as Record<string, string> || {}),
-  };
-
-  try {
-    const response = await fetch(url, {
-      ...options,
-      headers,
-    });
-
-    if (response.status === 401) {
-      onAuthError?.();
-      throw { status: 401, message: 'Unauthorized – token may be invalid or expired' } as ApiError;
-    }
-
-    if (!response.ok) {
-      const text = await response.text().catch(() => '');
-      throw { status: response.status, message: text || response.statusText } as ApiError;
-    }
-
-    const text = await response.text();
-    if (!text) return {} as T;
-    return JSON.parse(text) as T;
-  } catch (err) {
-    if ((err as ApiError).status) throw err;
-    // Network error
-    onNetworkError?.();
-    throw { status: 0, message: (err as Error).message || 'Network error' } as ApiError;
-  }
 }
 
 export async function healthCheck(baseUrl: string): Promise<{ ok: boolean; error?: string }> {

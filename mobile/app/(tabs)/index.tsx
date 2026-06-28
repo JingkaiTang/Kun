@@ -4,15 +4,14 @@ import {
   FlatList,
   RefreshControl,
   StyleSheet,
-  Text,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useConnectionStore } from '../../src/store/connection';
-import { useThreadsStore } from '../../src/store/threads';
+import { useChatStore } from '../../src/store/chat-store';
 import { ThreadCard } from '../../src/components/ThreadCard';
 import { EmptyState } from '../../src/components/EmptyState';
 import { StatusBar } from '../../src/components/StatusBar';
-import type { ThreadSummary } from '../../src/types/api';
+import type { NormalizedThread } from '../../src/agent/types';
 
 export default function DashboardScreen() {
   const router = useRouter();
@@ -20,21 +19,21 @@ export default function DashboardScreen() {
   const error = useConnectionStore((s) => s.error);
   const connected = status === 'connected';
 
-  const threads = useThreadsStore((s) => s.threads);
-  const loading = useThreadsStore((s) => s.loading);
-  const fetchThreads = useThreadsStore((s) => s.fetchThreads);
+  const threads = useChatStore((s) => s.threads);
+  const loading = useChatStore((s) => s.threadsLoading);
+  const refreshThreads = useChatStore((s) => s.refreshThreads);
 
   useEffect(() => {
     if (connected) {
-      fetchThreads();
+      void refreshThreads();
     }
-  }, [connected]);
+  }, [connected, refreshThreads]);
 
   const handleRefresh = useCallback(() => {
     if (connected) {
-      fetchThreads();
+      void refreshThreads();
     }
-  }, [connected]);
+  }, [connected, refreshThreads]);
 
   const handlePressThread = useCallback(
     (id: string) => {
@@ -44,13 +43,13 @@ export default function DashboardScreen() {
   );
 
   const renderItem = useCallback(
-    ({ item }: { item: ThreadSummary }) => (
+    ({ item }: { item: NormalizedThread }) => (
       <ThreadCard thread={item} onPress={() => handlePressThread(item.id)} />
     ),
     [handlePressThread]
   );
 
-  const keyExtractor = useCallback((item: ThreadSummary) => item.id, []);
+  const keyExtractor = useCallback((item: NormalizedThread) => item.id, []);
 
   if (!connected) {
     return (

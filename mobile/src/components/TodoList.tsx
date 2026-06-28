@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
-import type { TodoItem } from '../types/api';
+import type { ThreadTodoItem } from '../agent/types';
 
 interface Props {
-  todos: TodoItem[];
+  todos: ThreadTodoItem[];
 }
 
 const STATUS_ICON: Record<string, keyof typeof MaterialIcons.glyphMap> = {

@@ -1,6 +1,7 @@
 import { create } from 'zustand';
-import type { ConnectionStatus } from '../types/api';
 import { healthCheck, loadCredentials, saveCredentials, clearCredentials, setAuthErrorCallback, setNetworkErrorCallback } from '../api/client';
+
+export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'reconnecting';
 
 interface ConnectionState {
   baseUrl: string;

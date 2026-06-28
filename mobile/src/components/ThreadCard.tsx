@@ -1,10 +1,10 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import type { ThreadSummary } from '../types/api';
 import { MaterialIcons } from '@expo/vector-icons';
+import type { NormalizedThread } from '../agent/types';
 
 interface Props {
-  thread: ThreadSummary;
+  thread: NormalizedThread;
   onPress: () => void;
 }
 
@@ -16,7 +16,8 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 export function ThreadCard({ thread, onPress }: Props) {
-  const statusColor = STATUS_COLORS[thread.status] || STATUS_COLORS.idle;
+  const status = thread.status || (thread.archived ? 'archived' : 'idle');
+  const statusColor = STATUS_COLORS[status] || STATUS_COLORS.idle;
   const todoItems = thread.todos?.items ?? [];
   const total = todoItems.length;
   const completed = todoItems.filter((t) => t.status === 'completed').length;

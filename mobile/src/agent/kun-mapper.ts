@@ -105,7 +105,7 @@ export function todosFromCore(todos: CoreThreadTodoListJson): ThreadTodoList {
   }
 }
 
-function usageFromCore(usage: CoreUsageSnapshotJson): ThreadUsageSnapshot {
+export function usageFromCore(usage: CoreUsageSnapshotJson): ThreadUsageSnapshot {
   const inputTokens = usage.promptTokens ?? 0
   const outputTokens = usage.completionTokens ?? 0
   const hasHitTokens = typeof usage.cacheHitTokens === 'number' && Number.isFinite(usage.cacheHitTokens)
@@ -231,19 +231,18 @@ function payloadFor(item: CoreTurnItemJson): Record<string, unknown> {
 
 function normalizeUserFileReferences(value: unknown): UserFileReference[] | undefined {
   if (!Array.isArray(value)) return undefined
-  const references = value
-    .map((entry) => {
-      if (!entry || typeof entry !== 'object') return null
-      const raw = entry as Record<string, unknown>
-      const path = typeof raw.path === 'string' && raw.path.trim() ? raw.path.trim() : ''
-      const relativePath =
-        typeof raw.relativePath === 'string' && raw.relativePath.trim() ? raw.relativePath.trim() : ''
-      const name = typeof raw.name === 'string' && raw.name.trim() ? raw.name.trim() : ''
-      const kind = raw.kind === 'directory' ? 'directory' : 'file'
-      if (!path || !relativePath || !name) return null
-      return { path, relativePath, name, kind }
-    })
-    .filter((entry): entry is UserFileReference => entry !== null)
+  const references: UserFileReference[] = []
+  for (const entry of value) {
+    if (!entry || typeof entry !== 'object') continue
+    const raw = entry as Record<string, unknown>
+    const path = typeof raw.path === 'string' && raw.path.trim() ? raw.path.trim() : ''
+    const relativePath =
+      typeof raw.relativePath === 'string' && raw.relativePath.trim() ? raw.relativePath.trim() : ''
+    const name = typeof raw.name === 'string' && raw.name.trim() ? raw.name.trim() : ''
+    const kind: 'file' | 'directory' = raw.kind === 'directory' ? 'directory' : 'file'
+    if (!path || !relativePath || !name) continue
+    references.push({ path, relativePath, name, kind })
+  }
   return references.length > 0 ? references : undefined
 }
 
@@ -581,11 +580,21 @@ function toolEventFromItem(item: CoreTurnItemJson) {
   }
 }
 
-function compactionFromItem(item: CoreTurnItemJson) {
+function compactionFromItem(item: CoreTurnItemJson): {
+  itemId: string
+  summary: string
+  status: 'running' | 'success' | 'error'
+  createdAt: string | undefined
+  messagesBefore: number | undefined
+  detail: string | undefined
+  auto: boolean
+} {
+  const status: 'running' | 'success' | 'error' =
+    item.status === 'failed' ? 'error' : item.status === 'running' ? 'running' : 'success'
   return {
     itemId: item.id,
     summary: item.summary?.trim() || 'Context compacted',
-    status: item.status === 'failed' ? 'error' : item.status === 'running' ? 'running' : 'success',
+    status,
     createdAt: itemCreatedAt(item),
     messagesBefore: item.replacedTokens,
     detail: item.pinnedConstraints?.length ? item.pinnedConstraints.join('\n') : undefined,

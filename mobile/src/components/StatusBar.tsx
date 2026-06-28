@@ -1,12 +1,14 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
+import type { ConnectionStatus } from '../store/connection';
 
 interface Props {
-  status: 'connected' | 'reconnecting' | 'disconnected';
+  status: ConnectionStatus;
 }
 
-const STATUS_CONFIG = {
+const STATUS_CONFIG: Record<ConnectionStatus, { color: string; label: string }> = {
   connected: { color: '#128a4a', label: 'Connected' },
+  connecting: { color: '#3b82d8', label: 'Connecting...' },
   reconnecting: { color: '#e5a50b', label: 'Reconnecting' },
   disconnected: { color: '#d6493f', label: 'Disconnected' },
 };

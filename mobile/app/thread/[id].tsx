@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useCallback, useState } from 'react';
+import React, { useEffect, useRef, useCallback, useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -6,174 +6,149 @@ import {
   StyleSheet,
   KeyboardAvoidingView,
   Platform,
+  TouchableOpacity,
 } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { MaterialIcons } from '@expo/vector-icons';
+import { useLocalSearchParams } from 'expo-router';
 import { useConnectionStore } from '../../src/store/connection';
-import { useThreadsStore } from '../../src/store/threads';
-import { useEventsStore } from '../../src/store/events';
-import { sendMessage } from '../../src/api/turns';
-import { submitApproval } from '../../src/api/approvals';
-import { submitUserInput } from '../../src/api/user-inputs';
+import { useChatStore } from '../../src/store/chat-store';
 import { MessageBubble } from '../../src/components/MessageBubble';
 import { Composer } from '../../src/components/Composer';
 import { TodoList } from '../../src/components/TodoList';
 import { StatusBar } from '../../src/components/StatusBar';
 import { EmptyState } from '../../src/components/EmptyState';
-import type { ChatBlock } from '../../src/types/api';
+import type { ChatBlock, UserInputAnswer } from '../../src/agent/types';
+
+type ListItem =
+  | { type: 'status'; key: 'status' }
+  | { type: 'todo'; key: 'todos' }
+  | { type: 'block'; key: string; block: ChatBlock }
+  | { type: 'live'; key: 'live'; liveReasoning: string; liveAssistant: string };
 
 export default function ThreadDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const router = useRouter();
+  const threadId = id || '';
 
-  const baseUrl = useConnectionStore((s) => s.baseUrl);
-  const token = useConnectionStore((s) => s.token);
   const connectionStatus = useConnectionStore((s) => s.status);
 
-  const fetchThread = useThreadsStore((s) => s.fetchThread);
-  const fetchTodos = useThreadsStore((s) => s.fetchTodos);
-  const threadDetails = useThreadsStore((s) => s.threadDetails);
-  const todos = useThreadsStore((s) => s.todos);
-
-  const connectSSE = useEventsStore((s) => s.connectSSE);
-  const disconnectSSE = useEventsStore((s) => s.disconnectSSE);
-  const chatBlocks = useEventsStore((s) => s.chatBlocks);
-  const resolveApproval = useEventsStore((s) => s.resolveApproval);
-  const resolveUserInput = useEventsStore((s) => s.resolveUserInput);
-  const addChatBlock = useEventsStore((s) => s.addChatBlock);
-  const setChatBlocks = useEventsStore((s) => s.setChatBlocks);
+  const activeThreadId = useChatStore((s) => s.activeThreadId);
+  const blocks = useChatStore((s) => s.blocks);
+  const liveReasoning = useChatStore((s) => s.liveReasoning);
+  const liveAssistant = useChatStore((s) => s.liveAssistant);
+  const busy = useChatStore((s) => s.busy);
+  const error = useChatStore((s) => s.error);
+  const activeThreadTodos = useChatStore((s) => s.activeThreadTodos);
+  const approvalStatusByBlock = useChatStore((s) => s.approvalStatusByBlock);
+  const userInputStatusByBlock = useChatStore((s) => s.userInputStatusByBlock);
+  const selectThread = useChatStore((s) => s.selectThread);
+  const closeThread = useChatStore((s) => s.closeThread);
+  const sendMessage = useChatStore((s) => s.sendMessage);
+  const interrupt = useChatStore((s) => s.interrupt);
+  const steer = useChatStore((s) => s.steer);
+  const resolveApproval = useChatStore((s) => s.resolveApproval);
+  const resolveUserInput = useChatStore((s) => s.resolveUserInput);
+  const clearError = useChatStore((s) => s.clearError);
 
   const [message, setMessage] = useState('');
   const [sending, setSending] = useState(false);
-  const [approvalProcessing, setApprovalProcessing] = useState<string | null>(null);
 
   const flatListRef = useRef<FlatList>(null);
-  const threadId = id || '';
 
-  // Fetch thread detail and todos
+  // Select the thread when entering the screen; close the subscription on unmount.
   useEffect(() => {
     if (threadId && connectionStatus === 'connected') {
-      fetchThread(threadId).then(() => {
-        const detail = useThreadsStore.getState().threadDetails[threadId];
-        if (detail?.chatBlocks) {
-          setChatBlocks(threadId, detail.chatBlocks);
-        }
-      });
-      fetchTodos(threadId);
-    }
-  }, [threadId, connectionStatus]);
-
-  // Connect SSE
-  useEffect(() => {
-    if (threadId && baseUrl && token && connectionStatus === 'connected') {
-      connectSSE(baseUrl, token, threadId);
+      void selectThread(threadId);
     }
     return () => {
-      disconnectSSE();
+      closeThread();
     };
-  }, [threadId, baseUrl, token, connectionStatus]);
+  }, [threadId, connectionStatus, selectThread, closeThread]);
 
-  // Update header title
-  useEffect(() => {
-    const detail = threadDetails[threadId];
-    if (detail?.title) {
-      router.setParams({ title: detail.title });
+  const hasLiveContent = !!(liveReasoning.trim() || liveAssistant.trim());
+
+  const listData: ListItem[] = useMemo(() => {
+    const items: ListItem[] = [{ type: 'status', key: 'status' }];
+    if (activeThreadTodos && activeThreadTodos.items.length > 0) {
+      items.push({ type: 'todo', key: 'todos' });
     }
-  }, [threadDetails[threadId]?.title]);
+    for (const block of blocks) {
+      items.push({ type: 'block', key: `block_${block.id}`, block });
+    }
+    if (hasLiveContent) {
+      items.push({
+        type: 'live',
+        key: 'live',
+        liveReasoning,
+        liveAssistant,
+      });
+    }
+    return items;
+  }, [blocks, activeThreadTodos, hasLiveContent, liveReasoning, liveAssistant]);
 
-  // Auto-scroll on new messages
-  const blocks = chatBlocks[threadId] || [];
+  // Auto-scroll on new content.
+  const itemCount = listData.length;
   useEffect(() => {
-    if (blocks.length > 0) {
-      setTimeout(() => {
+    if (itemCount > 0) {
+      const t = setTimeout(() => {
         flatListRef.current?.scrollToEnd({ animated: true });
-      }, 100);
+      }, 80);
+      return () => clearTimeout(t);
     }
-  }, [blocks.length]);
-
-  const threadTodos = todos[threadId] || [];
+  }, [itemCount]);
 
   const handleSend = useCallback(async () => {
     const text = message.trim();
     if (!text || !threadId) return;
-
     setSending(true);
     try {
-      addChatBlock(threadId, {
-        id: `user_${Date.now()}`,
-        kind: 'user',
-        text,
-        createdAt: new Date().toISOString(),
-      });
-      setMessage('');
-      await sendMessage(threadId, text);
-    } catch (err) {
-      console.error('Failed to send message:', err);
+      const ok = await sendMessage(text);
+      if (ok) setMessage('');
     } finally {
       setSending(false);
     }
-  }, [message, threadId]);
+  }, [message, threadId, sendMessage]);
+
+  const handleSteer = useCallback(
+    async (text: string) => {
+      const trimmed = text.trim();
+      if (!trimmed) return;
+      setMessage('');
+      await steer(trimmed);
+    },
+    [steer]
+  );
+
+  const handleInterrupt = useCallback(() => {
+    void interrupt({ discard: false });
+  }, [interrupt]);
 
   const handleApprove = useCallback(
-    async (approvalId: string) => {
-      setApprovalProcessing(approvalId);
-      try {
-        resolveApproval(threadId, approvalId, 'submitting');
-        await submitApproval(approvalId, 'allow');
-        resolveApproval(threadId, approvalId, 'allowed');
-      } catch (err) {
-        console.error('Failed to approve:', err);
-        resolveApproval(threadId, approvalId, 'error', 'Failed to approve');
-      } finally {
-        setApprovalProcessing(null);
-      }
+    (blockId: string) => {
+      void resolveApproval(blockId, 'allow');
     },
-    [threadId]
+    [resolveApproval]
   );
 
   const handleDeny = useCallback(
-    async (approvalId: string) => {
-      setApprovalProcessing(approvalId);
-      try {
-        resolveApproval(threadId, approvalId, 'submitting');
-        await submitApproval(approvalId, 'deny');
-        resolveApproval(threadId, approvalId, 'denied');
-      } catch (err) {
-        console.error('Failed to deny:', err);
-        resolveApproval(threadId, approvalId, 'error', 'Failed to deny');
-      } finally {
-        setApprovalProcessing(null);
-      }
+    (blockId: string) => {
+      void resolveApproval(blockId, 'deny');
     },
-    [threadId]
+    [resolveApproval]
   );
 
-  const handleUserInput = useCallback(
-    async (requestId: string, answer: string) => {
-      try {
-        resolveUserInput(threadId, requestId, answer);
-        await submitUserInput(requestId, answer);
-      } catch (err) {
-        console.error('Failed to submit input:', err);
-      }
+  const handleSubmitUserInput = useCallback(
+    (blockId: string, answers: UserInputAnswer[]) => {
+      void resolveUserInput(blockId, { kind: 'submit', answers });
     },
-    [threadId]
+    [resolveUserInput]
   );
 
-  // Build list data
-  type ListItem =
-    | { type: 'status'; key: string }
-    | { type: 'todo'; key: string }
-    | { type: 'block'; key: string; block: ChatBlock };
-
-  const listData: ListItem[] = [
-    { type: 'status', key: 'status' },
-    ...(threadTodos.length > 0 ? [{ type: 'todo' as const, key: 'todos' }] : []),
-    ...blocks.map((b) => ({
-      type: 'block' as const,
-      key: `block_${b.id}`,
-      block: b,
-    })),
-  ];
+  const handleCancelUserInput = useCallback(
+    (blockId: string) => {
+      void resolveUserInput(blockId, { kind: 'cancel' });
+    },
+    [resolveUserInput]
+  );
 
   const renderItem = useCallback(
     ({ item }: { item: ListItem }) => {
@@ -181,26 +156,54 @@ export default function ThreadDetailScreen() {
         case 'status':
           return <StatusBar status={connectionStatus} />;
         case 'todo':
-          return <TodoList todos={threadTodos} />;
+          return activeThreadTodos ? <TodoList todos={activeThreadTodos.items} /> : null;
         case 'block':
           return (
             <MessageBubble
               block={item.block}
+              approvalStatus={approvalStatusByBlock[item.block.id]}
+              userInputStatus={userInputStatusByBlock[item.block.id]}
               onApprove={handleApprove}
               onDeny={handleDeny}
-              onUserInput={handleUserInput}
-              processing={approvalProcessing !== null}
+              onSubmitUserInput={handleSubmitUserInput}
+              onCancelUserInput={handleCancelUserInput}
+            />
+          );
+        case 'live':
+          return (
+            <LiveStreamingBubble
+              reasoning={item.liveReasoning}
+              assistant={item.liveAssistant}
             />
           );
         default:
           return null;
       }
     },
-    [connectionStatus, threadTodos, approvalProcessing, handleApprove, handleDeny, handleUserInput]
+    [
+      connectionStatus,
+      activeThreadTodos,
+      approvalStatusByBlock,
+      userInputStatusByBlock,
+      handleApprove,
+      handleDeny,
+      handleSubmitUserInput,
+      handleCancelUserInput,
+    ]
   );
 
   if (!threadId) {
     return <EmptyState message="Thread not found." />;
+  }
+
+  if (activeThreadId !== threadId) {
+    // selectThread is in flight; render an empty container to avoid
+    // flashing stale blocks from the previous thread.
+    return (
+      <View style={styles.container}>
+        <StatusBar status={connectionStatus} />
+      </View>
+    );
   }
 
   return (
@@ -219,16 +222,122 @@ export default function ThreadDetailScreen() {
           flatListRef.current?.scrollToEnd({ animated: false })
         }
       />
-
+      {error ? (
+        <View style={styles.errorBar}>
+          <MaterialIcons name="error-outline" size={16} color="#d6493f" />
+          <Text style={styles.errorText} numberOfLines={2}>{error}</Text>
+          <TouchableOpacity onPress={clearError} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <MaterialIcons name="close" size={16} color="#8492b1" />
+          </TouchableOpacity>
+        </View>
+      ) : null}
       <Composer
         value={message}
         onChangeText={setMessage}
         onSend={handleSend}
+        onSteer={handleSteer}
+        onInterrupt={handleInterrupt}
+        busy={busy}
         sending={sending}
+        disabled={connectionStatus !== 'connected'}
       />
     </KeyboardAvoidingView>
   );
 }
+
+/**
+ * Streaming preview bubble — shows in-progress reasoning and assistant
+ * text before they're flushed to committed blocks. Mirrors desktop's
+ * liveReasoning / liveAssistant rendering.
+ */
+function LiveStreamingBubble({
+  reasoning,
+  assistant,
+}: {
+  reasoning: string;
+  assistant: string;
+}) {
+  return (
+    <View style={liveStyles.container}>
+      {reasoning.trim() ? (
+        <View style={[liveStyles.bubble, liveStyles.reasoningBubble]}>
+          <View style={liveStyles.header}>
+            <MaterialIcons name="psychology" size={14} color="#7a68e8" />
+            <View style={[liveStyles.dot, { backgroundColor: '#7a68e8' }]} />
+            <Text style={[liveStyles.label, { color: '#7a68e8' }]}>Thinking</Text>
+          </View>
+          <Text style={[liveStyles.text, { color: '#54678c' }]} selectable>
+            {reasoning}
+            <Text style={liveStyles.cursor}>▍</Text>
+          </Text>
+        </View>
+      ) : null}
+      {assistant.trim() ? (
+        <View style={[liveStyles.bubble, liveStyles.assistantBubble]}>
+          <View style={liveStyles.header}>
+            <MaterialIcons name="auto-awesome" size={14} color="#3b82d8" />
+            <View style={[liveStyles.dot, { backgroundColor: '#3b82d8' }]} />
+            <Text style={[liveStyles.label, { color: '#3b82d8' }]}>Assistant</Text>
+          </View>
+          <Text style={[liveStyles.text, { color: '#233659' }]} selectable>
+            {assistant}
+            <Text style={liveStyles.cursor}>▍</Text>
+          </Text>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+const liveStyles = StyleSheet.create({
+  container: {
+    marginHorizontal: 16,
+    marginVertical: 3,
+    gap: 6,
+  },
+  bubble: {
+    maxWidth: '85%',
+    alignSelf: 'flex-start',
+    borderRadius: 18,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  reasoningBubble: {
+    backgroundColor: 'rgba(122,104,232,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(122,104,232,0.2)',
+    borderBottomLeftRadius: 4,
+  },
+  assistantBubble: {
+    backgroundColor: 'rgba(255,255,255,0.95)',
+    borderWidth: 1,
+    borderColor: 'rgba(20,47,95,0.1)',
+    borderBottomLeftRadius: 4,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 4,
+  },
+  dot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    marginLeft: 2,
+  },
+  label: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  text: {
+    fontSize: 15,
+    lineHeight: 22,
+  },
+  cursor: {
+    color: '#7a68e8',
+  },
+});
 
 const styles = StyleSheet.create({
   container: {
@@ -238,5 +347,20 @@ const styles = StyleSheet.create({
   list: {
     paddingVertical: 8,
     paddingBottom: 16,
+  },
+  errorBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    backgroundColor: 'rgba(214,73,63,0.06)',
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(214,73,63,0.2)',
+  },
+  errorText: {
+    flex: 1,
+    fontSize: 13,
+    color: '#d6493f',
   },
 });

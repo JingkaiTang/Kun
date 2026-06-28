@@ -23,6 +23,7 @@ import {
   todosFromCore,
   usageFromCore
 } from './kun-mapper'
+import { notifyAuthError, notifyNetworkError } from '../api/client'
 import type {
   AgentProvider,
   NormalizedThread,
@@ -74,7 +75,18 @@ export class KunRuntimeClient implements AgentProvider {
       ...(init.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
       ...(init.headers as Record<string, string> | undefined)
     }
-    const response = await this.fetchImpl(url, { ...init, headers })
+    let response: Response
+    try {
+      response = await this.fetchImpl(url, { ...init, headers })
+    } catch (err) {
+      // Network failure (DNS, connection refused, timeout). Notify the
+      // connection store so the UI can show a reconnecting state.
+      notifyNetworkError()
+      throw err
+    }
+    if (response.status === 401) {
+      notifyAuthError()
+    }
     if (!response.ok) {
       const text = await response.text().catch(() => '')
       throw new Error(`HTTP ${response.status}${text ? `: ${text.slice(0, 200)}` : ''}`)
@@ -259,6 +271,7 @@ export class KunRuntimeClient implements AgentProvider {
 
         if (!response.ok) {
           if (response.status === 401) {
+            notifyAuthError()
             sink.onError(new Error('Unauthorized – token may be invalid or expired'), { terminal: true })
             return
           }

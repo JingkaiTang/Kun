@@ -2,22 +2,41 @@ import React, { useState } from 'react';
 import {
   View,
   Text,
+  TextInput,
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
-import type { ChatBlock, ToolBlock, ApprovalBlock, UserInputBlock } from '../types/api';
+import type {
+  ChatBlock,
+  ToolBlock,
+  ApprovalBlock,
+  UserInputBlock,
+  UserInputAnswer,
+} from '../agent/types';
 
 interface Props {
   block: ChatBlock;
-  onApprove?: (approvalId: string) => void;
-  onDeny?: (approvalId: string) => void;
-  onUserInput?: (requestId: string, answer: string) => void;
-  processing?: boolean;
+  /** Per-block approval status from the store (overrides the block's own status). */
+  approvalStatus?: 'pending' | 'submitting' | 'allowed' | 'denied' | 'error';
+  /** Per-block user-input status from the store. */
+  userInputStatus?: 'pending' | 'submitting' | 'submitted' | 'cancelled' | 'error';
+  onApprove?: (blockId: string) => void;
+  onDeny?: (blockId: string) => void;
+  onSubmitUserInput?: (blockId: string, answers: UserInputAnswer[]) => void;
+  onCancelUserInput?: (blockId: string) => void;
 }
 
-export function MessageBubble({ block, onApprove, onDeny, onUserInput, processing }: Props) {
+export function MessageBubble({
+  block,
+  approvalStatus,
+  userInputStatus,
+  onApprove,
+  onDeny,
+  onSubmitUserInput,
+  onCancelUserInput,
+}: Props) {
   switch (block.kind) {
     case 'user':
       return <UserBubble block={block} />;
@@ -28,13 +47,25 @@ export function MessageBubble({ block, onApprove, onDeny, onUserInput, processin
     case 'tool':
       return <ToolBubble block={block} />;
     case 'approval':
-      return <ApprovalBubble block={block} onApprove={onApprove} onDeny={onDeny} processing={processing} />;
+      return (
+        <ApprovalBubble
+          block={block}
+          status={approvalStatus ?? block.status}
+          onApprove={onApprove}
+          onDeny={onDeny}
+        />
+      );
     case 'user_input':
-      return <UserInputBubble block={block} onUserInput={onUserInput} processing={processing} />;
+      return (
+        <UserInputBubble
+          block={block}
+          status={userInputStatus ?? block.status}
+          onSubmit={onSubmitUserInput}
+          onCancel={onCancelUserInput}
+        />
+      );
     case 'system':
       return <SystemBubble block={block} />;
-    case 'error':
-      return <ErrorBubble block={block} />;
     case 'compaction':
       return <CompactionBubble block={block} />;
     default:
@@ -50,9 +81,6 @@ function UserBubble({ block }: { block: ChatBlock & { kind: 'user' } }) {
       <View style={[styles.bubble, styles.userBubble]}>
         <Text style={styles.userText}>{block.text}</Text>
       </View>
-      {block.modelLabel ? (
-        <Text style={styles.modelLabel}>{block.modelLabel}</Text>
-      ) : null}
     </View>
   );
 }
@@ -105,7 +133,9 @@ function ToolBubble({ block }: { block: ToolBlock }) {
   const [expanded, setExpanded] = useState(false);
   const isRunning = block.status === 'running';
   const isError = block.status === 'error';
-  const isSuccess = block.status === 'success';
+  const toolName =
+    (block.meta?.toolName as string | undefined) ||
+    (typeof block.summary === 'string' ? block.summary.split('\n')[0] : 'Tool');
 
   return (
     <View style={styles.rowLeft}>
@@ -129,7 +159,7 @@ function ToolBubble({ block }: { block: ToolBlock }) {
             />
           )}
           <Text style={[styles.toolName, isError && styles.toolErrorName]}>
-            {block.toolName || 'Tool'}
+            {toolName}
           </Text>
           {block.detail ? (
             <MaterialIcons
@@ -152,25 +182,24 @@ function ToolBubble({ block }: { block: ToolBlock }) {
 
 function ApprovalBubble({
   block,
+  status,
   onApprove,
   onDeny,
-  processing,
 }: {
   block: ApprovalBlock;
-  onApprove?: (approvalId: string) => void;
-  onDeny?: (approvalId: string) => void;
-  processing?: boolean;
+  status: 'pending' | 'submitting' | 'allowed' | 'denied' | 'error';
+  onApprove?: (blockId: string) => void;
+  onDeny?: (blockId: string) => void;
 }) {
-  const isPending = block.status === 'pending';
-  const isSubmitting = block.status === 'submitting';
-  const isDone = block.status === 'allowed' || block.status === 'denied';
+  const isPending = status === 'pending';
+  const isSubmitting = status === 'submitting';
 
   const statusLabel =
-    block.status === 'allowed'
+    status === 'allowed'
       ? 'Approved'
-      : block.status === 'denied'
+      : status === 'denied'
         ? 'Denied'
-        : block.status === 'error'
+        : status === 'error'
           ? 'Failed'
           : isSubmitting
             ? 'Submitting...'
@@ -193,8 +222,8 @@ function ApprovalBubble({
         <View style={styles.approvalActions}>
           <TouchableOpacity
             style={[styles.approvalBtn, styles.approveBtn]}
-            onPress={() => onApprove?.(block.approvalId)}
-            disabled={isSubmitting || processing}
+            onPress={() => onApprove?.(block.id)}
+            disabled={isSubmitting}
             activeOpacity={0.7}
           >
             {isSubmitting ? (
@@ -208,8 +237,8 @@ function ApprovalBubble({
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.approvalBtn, styles.denyBtn]}
-            onPress={() => onDeny?.(block.approvalId)}
-            disabled={isSubmitting || processing}
+            onPress={() => onDeny?.(block.id)}
+            disabled={isSubmitting}
             activeOpacity={0.7}
           >
             <MaterialIcons name="close" size={16} color="#fff" />
@@ -227,30 +256,72 @@ function ApprovalBubble({
 
 function UserInputBubble({
   block,
-  onUserInput,
-  processing,
+  status,
+  onSubmit,
+  onCancel,
 }: {
   block: UserInputBlock;
-  onUserInput?: (requestId: string, answer: string) => void;
-  processing?: boolean;
+  status: 'pending' | 'submitting' | 'submitted' | 'cancelled' | 'error';
+  onSubmit?: (blockId: string, answers: UserInputAnswer[]) => void;
+  onCancel?: (blockId: string) => void;
 }) {
-  const [text, setText] = useState('');
-  const isPending = block.status === 'pending';
+  const [textByQuestion, setTextByQuestion] = useState<Record<string, string>>({});
+  const isPending = status === 'pending';
+  const isSubmitting = status === 'submitting';
 
-  if (!isPending) {
+  if (!isPending && !isSubmitting) {
+    const statusLabel =
+      status === 'submitted'
+        ? 'Submitted'
+        : status === 'cancelled'
+          ? 'Cancelled'
+          : 'Failed';
     return (
       <View style={[styles.bubble, styles.userInputBubble]}>
         <View style={styles.userInputHeader}>
           <MaterialIcons name="input" size={16} color="#7a68e8" />
-          <Text style={styles.userInputTitle}>Input Provided</Text>
+          <Text style={styles.userInputTitle}>{statusLabel}</Text>
         </View>
-        <Text style={styles.userInputPrompt}>{block.prompt}</Text>
-        {block.answer ? (
-          <Text style={styles.userInputAnswer}>Answer: {block.answer}</Text>
+        {block.answers && block.answers.length > 0 ? (
+          block.answers.map((answer, idx) => {
+            const question = block.questions.find((q) => q.id === answer.id);
+            return (
+              <View key={idx} style={styles.userInputAnswerRow}>
+                <Text style={styles.userInputAnswerLabel}>
+                  {question?.header ?? answer.id}: {answer.label}
+                </Text>
+              </View>
+            );
+          })
+        ) : null}
+        {block.errorMessage ? (
+          <Text style={styles.userInputError}>{block.errorMessage}</Text>
         ) : null}
       </View>
     );
   }
+
+  const hasMultipleChoice = block.questions.some(
+    (q) => q.options && q.options.length > 0
+  );
+
+  const submitAll = (): void => {
+    const answers: UserInputAnswer[] = block.questions.map((q) => {
+      const text = textByQuestion[q.id]?.trim();
+      if (text && q.options.length > 0) {
+        const matched = q.options.find((o) => o.label === text);
+        if (matched) {
+          return { id: q.id, label: matched.label, value: text };
+        }
+      }
+      return {
+        id: q.id,
+        label: text || q.options[0]?.label || q.question,
+        value: text || q.options[0]?.label || '',
+      };
+    });
+    onSubmit?.(block.id, answers);
+  };
 
   return (
     <View style={[styles.bubble, styles.userInputBubble]}>
@@ -258,24 +329,71 @@ function UserInputBubble({
         <MaterialIcons name="input" size={16} color="#7a68e8" />
         <Text style={styles.userInputTitle}>Input Required</Text>
       </View>
-      <Text style={styles.userInputPrompt}>{block.prompt}</Text>
-      {block.options && block.options.length > 0 ? (
-        <View style={styles.userInputOptions}>
-          {block.options.map((opt, idx) => (
-            <TouchableOpacity
-              key={idx}
-              style={styles.userInputOptionBtn}
-              onPress={() => onUserInput?.(block.requestId, opt)}
-              disabled={processing}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.userInputOptionText}>{opt}</Text>
-            </TouchableOpacity>
-          ))}
+      {block.questions.map((q, qIdx) => (
+        <View key={q.id} style={qIdx > 0 ? styles.userInputQuestionGap : null}>
+          <Text style={styles.userInputQuestionHeader}>{q.header}</Text>
+          <Text style={styles.userInputPrompt}>{q.question}</Text>
+          {q.options && q.options.length > 0 ? (
+            <View style={styles.userInputOptions}>
+              {q.options.map((opt, optIdx) => {
+                const selected = textByQuestion[q.id] === opt.label;
+                return (
+                  <TouchableOpacity
+                    key={optIdx}
+                    style={[
+                      styles.userInputOptionBtn,
+                      selected && styles.userInputOptionBtnSelected,
+                    ]}
+                    onPress={() =>
+                      setTextByQuestion((prev) => ({ ...prev, [q.id]: opt.label }))
+                    }
+                    disabled={isSubmitting}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.userInputOptionText}>{opt.label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          ) : (
+            <TextInput
+              style={styles.userInputText}
+              value={textByQuestion[q.id] ?? ''}
+              onChangeText={(text) =>
+                setTextByQuestion((prev) => ({ ...prev, [q.id]: text }))
+              }
+              placeholder="Type your answer..."
+              placeholderTextColor="#8492b1"
+              editable={!isSubmitting}
+              multiline
+            />
+          )}
         </View>
-      ) : (
-        <Text style={styles.userInputHint}>Reply in the composer below</Text>
-      )}
+      ))}
+      <View style={styles.userInputActions}>
+        {hasMultipleChoice ? null : (
+          <TouchableOpacity
+            style={[styles.userInputBtn, styles.userInputCancelBtn]}
+            onPress={() => onCancel?.(block.id)}
+            disabled={isSubmitting}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.userInputCancelText}>Cancel</Text>
+          </TouchableOpacity>
+        )}
+        <TouchableOpacity
+          style={[styles.userInputBtn, styles.userInputSubmitBtn]}
+          onPress={submitAll}
+          disabled={isSubmitting}
+          activeOpacity={0.7}
+        >
+          {isSubmitting ? (
+            <ActivityIndicator size="small" color="#fff" />
+          ) : (
+            <Text style={styles.userInputSubmitText}>Submit</Text>
+          )}
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
@@ -283,23 +401,33 @@ function UserInputBubble({
 // ---- System ----
 
 function SystemBubble({ block }: { block: ChatBlock & { kind: 'system' } }) {
+  const isError = block.severity === 'error';
+  const isWarning = block.severity === 'warning';
   return (
-    <View style={styles.systemContainer}>
-      <Text style={styles.systemText}>{block.text}</Text>
-    </View>
-  );
-}
-
-// ---- Error ----
-
-function ErrorBubble({ block }: { block: ChatBlock & { kind: 'error' } }) {
-  return (
-    <View style={[styles.bubble, styles.errorBubble]}>
-      <View style={styles.errorHeader}>
-        <MaterialIcons name="error-outline" size={14} color="#d6493f" />
-        <Text style={styles.errorTitle}>Error</Text>
+    <View style={[
+      styles.bubble,
+      styles.systemBubble,
+      isError && styles.systemErrorBubble,
+      isWarning && styles.systemWarningBubble,
+    ]}>
+      <View style={styles.systemHeader}>
+        <MaterialIcons
+          name={isError ? 'error-outline' : isWarning ? 'warning' : 'info'}
+          size={14}
+          color={isError ? '#d6493f' : isWarning ? '#e5a50b' : '#7a68e8'}
+        />
+        <Text style={[
+          styles.systemTitle,
+          isError && styles.systemErrorTitle,
+          isWarning && styles.systemWarningTitle,
+        ]}>
+          {block.code ? block.code : isError ? 'Error' : isWarning ? 'Warning' : 'Notice'}
+        </Text>
       </View>
-      <Text style={styles.errorText}>{block.text}</Text>
+      <Text style={styles.systemText}>{block.text}</Text>
+      {block.detail ? (
+        <Text style={styles.systemDetail} selectable>{block.detail}</Text>
+      ) : null}
     </View>
   );
 }
@@ -309,6 +437,7 @@ function ErrorBubble({ block }: { block: ChatBlock & { kind: 'error' } }) {
 function CompactionBubble({ block }: { block: ChatBlock & { kind: 'compaction' } }) {
   return (
     <View style={styles.compactionContainer}>
+      <MaterialIcons name="compress" size={14} color="#8492b1" />
       <Text style={styles.compactionText}>{block.summary}</Text>
     </View>
   );
@@ -342,12 +471,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 22,
     color: '#fff',
-  },
-  modelLabel: {
-    fontSize: 11,
-    color: '#8492b1',
-    marginTop: 4,
-    marginRight: 4,
   },
   // Assistant
   assistantBubble: {
@@ -491,14 +614,14 @@ const styles = StyleSheet.create({
   approvalStatus: {
     marginTop: 8,
     fontSize: 12,
-    fontWeight: '600',
     color: '#8492b1',
+    fontStyle: 'italic',
   },
-  // User Input
+  // User input
   userInputBubble: {
-    backgroundColor: 'rgba(243,241,255,0.95)',
+    backgroundColor: 'rgba(122,104,232,0.06)',
     borderWidth: 1,
-    borderColor: 'rgba(122,104,232,0.3)',
+    borderColor: 'rgba(122,104,232,0.2)',
     maxWidth: '90%',
     alignSelf: 'flex-start',
     marginHorizontal: 16,
@@ -508,7 +631,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    marginBottom: 6,
+    marginBottom: 8,
   },
   userInputTitle: {
     fontSize: 12,
@@ -516,89 +639,154 @@ const styles = StyleSheet.create({
     color: '#7a68e8',
     textTransform: 'uppercase',
   },
+  userInputQuestionGap: {
+    marginTop: 12,
+  },
+  userInputQuestionHeader: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#7a68e8',
+    marginBottom: 4,
+  },
   userInputPrompt: {
     fontSize: 14,
     lineHeight: 20,
     color: '#233659',
-  },
-  userInputAnswer: {
-    marginTop: 6,
-    fontSize: 13,
-    color: '#54678c',
-    fontStyle: 'italic',
+    marginBottom: 8,
   },
   userInputOptions: {
-    marginTop: 10,
-    gap: 8,
+    flexDirection: 'column',
+    gap: 6,
   },
   userInputOptionBtn: {
-    backgroundColor: '#7a68e8',
-    borderRadius: 10,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255,255,255,0.8)',
+    borderWidth: 1,
+    borderColor: 'rgba(20,47,95,0.12)',
+  },
+  userInputOptionBtnSelected: {
+    backgroundColor: 'rgba(122,104,232,0.15)',
+    borderColor: '#7a68e8',
   },
   userInputOptionText: {
+    fontSize: 14,
+    color: '#233659',
+  },
+  userInputText: {
+    backgroundColor: 'rgba(255,255,255,0.8)',
+    borderWidth: 1,
+    borderColor: 'rgba(20,47,95,0.12)',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 14,
+    color: '#233659',
+    minHeight: 40,
+    maxHeight: 100,
+  },
+  userInputActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 8,
+    marginTop: 12,
+  },
+  userInputBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+  },
+  userInputCancelBtn: {
+    backgroundColor: 'rgba(20,47,95,0.08)',
+  },
+  userInputCancelText: {
+    fontSize: 14,
+    color: '#54678c',
+  },
+  userInputSubmitBtn: {
+    backgroundColor: '#7a68e8',
+  },
+  userInputSubmitText: {
     fontSize: 14,
     fontWeight: '600',
     color: '#fff',
   },
-  userInputHint: {
-    marginTop: 8,
+  userInputAnswerRow: {
+    marginTop: 6,
+  },
+  userInputAnswerLabel: {
+    fontSize: 13,
+    color: '#54678c',
+  },
+  userInputError: {
+    marginTop: 6,
     fontSize: 12,
-    color: '#8492b1',
-    fontStyle: 'italic',
+    color: '#d6493f',
   },
   // System
-  systemContainer: {
-    alignItems: 'center',
-    marginVertical: 6,
-    marginHorizontal: 16,
-  },
-  systemText: {
-    fontSize: 11,
-    color: '#8492b1',
-    fontStyle: 'italic',
-  },
-  // Error
-  errorBubble: {
-    backgroundColor: 'rgba(214,73,63,0.08)',
+  systemBubble: {
+    backgroundColor: 'rgba(122,104,232,0.06)',
     borderWidth: 1,
-    borderColor: 'rgba(214,73,63,0.25)',
-    borderBottomLeftRadius: 4,
-    maxWidth: '90%',
-    alignSelf: 'flex-start',
+    borderColor: 'rgba(122,104,232,0.2)',
+    alignSelf: 'center',
     marginHorizontal: 16,
-    marginVertical: 3,
+    marginVertical: 4,
   },
-  errorHeader: {
+  systemErrorBubble: {
+    backgroundColor: 'rgba(214,73,63,0.08)',
+    borderColor: 'rgba(214,73,63,0.25)',
+  },
+  systemWarningBubble: {
+    backgroundColor: 'rgba(229,165,11,0.08)',
+    borderColor: 'rgba(229,165,11,0.25)',
+  },
+  systemHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
     marginBottom: 4,
   },
-  errorTitle: {
+  systemTitle: {
     fontSize: 12,
     fontWeight: '700',
+    color: '#7a68e8',
+    textTransform: 'uppercase',
+  },
+  systemErrorTitle: {
     color: '#d6493f',
   },
-  errorText: {
+  systemWarningTitle: {
+    color: '#e5a50b',
+  },
+  systemText: {
     fontSize: 13,
     lineHeight: 19,
-    color: '#d6493f',
+    color: '#233659',
+  },
+  systemDetail: {
+    marginTop: 6,
+    fontSize: 11,
+    lineHeight: 16,
+    color: '#8492b1',
+    fontFamily: 'monospace',
   },
   // Compaction
   compactionContainer: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginVertical: 6,
-    marginHorizontal: 16,
-    paddingVertical: 6,
+    alignSelf: 'center',
+    gap: 6,
+    paddingVertical: 4,
     paddingHorizontal: 12,
+    borderRadius: 10,
     backgroundColor: 'rgba(20,47,95,0.04)',
-    borderRadius: 12,
+    marginHorizontal: 16,
+    marginVertical: 4,
   },
   compactionText: {
-    fontSize: 12,
+    fontSize: 11,
     color: '#8492b1',
+    fontStyle: 'italic',
   },
 });

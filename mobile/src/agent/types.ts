@@ -153,48 +153,71 @@ export type CompactionBlock = {
   messagesAfter?: number
 }
 
+export type ApprovalBlock = {
+  kind: 'approval'
+  id: string
+  createdAt?: string
+  approvalId: string
+  summary: string
+  toolName?: string
+  status: 'pending' | 'submitting' | 'allowed' | 'denied' | 'error'
+  errorMessage?: string
+}
+
+export type UserInputBlock = {
+  kind: 'user_input'
+  id: string
+  createdAt?: string
+  requestId: string
+  questions: UserInputQuestion[]
+  status: 'pending' | 'submitted' | 'cancelled' | 'error'
+  answers?: UserInputAnswer[]
+  errorMessage?: string
+}
+
+export type SystemBlock = {
+  kind: 'system'
+  id: string
+  createdAt?: string
+  text: string
+  code?: string
+  detail?: string
+  severity?: RuntimeErrorSeverity
+}
+
+export type UserMessageBlock = {
+  kind: 'user'
+  id: string
+  turnId?: string
+  createdAt?: string
+  text: string
+  meta?: RuntimeDisclosureMetadata
+}
+
+export type AssistantTextBlock = {
+  kind: 'assistant'
+  id: string
+  turnId?: string
+  createdAt?: string
+  text: string
+}
+
+export type ReasoningBlock = {
+  kind: 'reasoning'
+  id: string
+  createdAt?: string
+  text: string
+}
+
 export type ChatBlock =
-  | {
-      kind: 'user'
-      id: string
-      turnId?: string
-      createdAt?: string
-      text: string
-      meta?: RuntimeDisclosureMetadata
-    }
-  | { kind: 'assistant'; id: string; turnId?: string; createdAt?: string; text: string }
-  | { kind: 'reasoning'; id: string; createdAt?: string; text: string }
+  | UserMessageBlock
+  | AssistantTextBlock
+  | ReasoningBlock
   | ToolBlock
   | CompactionBlock
-  | {
-      kind: 'system'
-      id: string
-      createdAt?: string
-      text: string
-      code?: string
-      detail?: string
-      severity?: RuntimeErrorSeverity
-    }
-  | {
-      kind: 'approval'
-      id: string
-      createdAt?: string
-      approvalId: string
-      summary: string
-      toolName?: string
-      status: 'pending' | 'submitting' | 'allowed' | 'denied' | 'error'
-      errorMessage?: string
-    }
-  | {
-      kind: 'user_input'
-      id: string
-      createdAt?: string
-      requestId: string
-      questions: UserInputQuestion[]
-      status: 'pending' | 'submitted' | 'cancelled' | 'error'
-      answers?: UserInputAnswer[]
-      errorMessage?: string
-    }
+  | SystemBlock
+  | ApprovalBlock
+  | UserInputBlock
 
 // ---------------------------------------------------------------------------
 // ThreadEventSink — what the dispatcher feeds the store with
