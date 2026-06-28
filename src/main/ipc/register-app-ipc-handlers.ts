@@ -109,7 +109,7 @@ import type { ScheduleRuntime } from '../schedule-runtime'
 import { verifyTelegramBotToken } from '../telegram-runtime'
 import type { WorkflowRuntime } from '../workflow-runtime'
 import { checkWorkflowCode } from '../workflow-runtime'
-import { MobileGateway } from '../mobile-gateway'
+import { MobileGateway, buildMobileGatewayDeps } from '../mobile-gateway'
 import { createSession, revokeSession, refreshToken } from '../mobile-session'
 import type { MobileSessionV1 } from '../../shared/mobile-api-types'
 import { networkInterfaces } from 'node:os'
@@ -1388,7 +1388,8 @@ export function registerAppIpcHandlers(options: RegisterAppIpcHandlersOptions): 
         gateway = new MobileGateway(
           store,
           settings.mobile.sessions,
-          (msg) => logError('mobile-gateway', msg)
+          (msg) => logError('mobile-gateway', msg),
+          buildMobileGatewayDeps(getScheduleRuntime)
         )
         setMobileGateway(gateway)
       } else {

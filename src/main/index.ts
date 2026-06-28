@@ -65,7 +65,7 @@ import { cleanupUnusedGitCheckpointsIfDue } from './services/git-checkpoint-serv
 import { createClawRuntime, type ClawRuntime } from './claw-runtime'
 import { createScheduleRuntime, type ScheduleRuntime } from './schedule-runtime'
 import { createWorkflowRuntime, type WorkflowRuntime } from './workflow-runtime'
-import { MobileGateway } from './mobile-gateway'
+import { MobileGateway, buildMobileGatewayDeps } from './mobile-gateway'
 import { runClawScheduleMcpServerFromArgv } from './claw-schedule-mcp-server'
 import {
   clawScheduleMcpSettingsChanged,
@@ -1561,7 +1561,8 @@ app.whenReady().then(async () => {
       mobileGateway = new MobileGateway(
         store,
         initial.mobile.sessions,
-        (msg) => logError('mobile-gateway', msg)
+        (msg) => logError('mobile-gateway', msg),
+        buildMobileGatewayDeps(() => scheduleRuntime)
       )
       await mobileGateway.start()
     } catch (error) {
