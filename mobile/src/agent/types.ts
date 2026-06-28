@@ -96,6 +96,14 @@ export type ThreadTodoList = {
   updatedAt: string
 }
 
+/**
+ * Writable todo item shape — what callers POST to
+ * /v1/threads/:id/todos. Mirrors kun SetThreadTodosRequestSchema:
+ * the server persists createdAt/updatedAt itself, so callers omit them.
+ * Aligned with desktop `Pick<ThreadTodoItem, 'id'|'content'|'status'|'source'>`.
+ */
+export type ThreadTodoWriteItem = Pick<ThreadTodoItem, 'id' | 'content' | 'status' | 'source'>
+
 export type NormalizedThread = {
   id: string
   title: string
@@ -342,6 +350,10 @@ export interface AgentProvider {
   listThreads(options?: ThreadListOptions): Promise<NormalizedThread[]>
   getThreadDetail(threadId: string): Promise<ThreadDetailResult>
   getThreadTodos(threadId: string): Promise<ThreadTodoList | null>
+  /** Full-list replacement of a thread's todos (POST /v1/threads/:id/todos). */
+  setThreadTodos(threadId: string, items: ThreadTodoWriteItem[]): Promise<ThreadTodoList>
+  /** Delete all todos for a thread (DELETE /v1/threads/:id/todos). */
+  clearThreadTodos(threadId: string): Promise<boolean>
   sendUserMessage(threadId: string, text: string): Promise<{ turnId: string; threadId: string; userMessageItemId?: string }>
   interruptTurn(threadId: string, turnId: string, options?: { discard?: boolean }): Promise<void>
   steerUserMessage(threadId: string, turnId: string, text: string): Promise<void>

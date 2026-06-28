@@ -16,7 +16,7 @@
 
 import { create } from 'zustand'
 import { KunRuntimeClient } from '../agent/runtime-client'
-import { chatBlockFromItem, mergeChatBlocks, threadFromCore } from '../agent/kun-mapper'
+import { chatBlockFromItem, mergeChatBlocks, threadFromCore, threadTodoWriteItems } from '../agent/kun-mapper'
 import type {
   AgentProvider,
   ChatBlock,
@@ -26,6 +26,7 @@ import type {
   ThreadEventSink,
   ThreadGoal,
   ThreadTodoList,
+  ThreadTodoStatus,
   ToolBlock,
   UserInputAnswer,
   UserInputQuestion
@@ -73,6 +74,15 @@ export type ChatState = {
     blockId: string,
     action: { kind: 'submit'; answers: UserInputAnswer[] } | { kind: 'cancel' }
   ) => Promise<void>
+  /**
+   * Set a single todo's status. Non-optimistic — waits for the server
+   * POST (full-list replacement) to confirm before updating local state.
+   * Mirrors desktop: when promoting to `in_progress`, any other item
+   * currently `in_progress` is demoted to `pending` (at most one active).
+   */
+  setActiveThreadTodoStatus: (todoId: string, status: ThreadTodoStatus) => Promise<boolean>
+  /** Delete all todos for the active thread. Non-optimistic. */
+  clearActiveThreadTodos: () => Promise<boolean>
   clearError: () => void
 }
 
@@ -109,6 +119,28 @@ function flushLiveBlocks(state: ChatState): Partial<ChatState> {
     liveReasoning: '',
     liveAssistant: ''
   }
+}
+
+/**
+ * Apply a todos snapshot to both `activeThreadTodos` (only if the active
+ * thread matches) and the threads list entry. Mirrors desktop
+ * applyTodosSnapshot. Handles null (clear) consistently — the previous
+ * mobile onTodos skipped the threads-list update when todos was null.
+ */
+function applyTodosSnapshot(
+  set: (partial: Partial<ChatState> | ((state: ChatState) => Partial<ChatState>)) => void,
+  threadId: string,
+  todos: ThreadTodoList | null,
+  updatedAt = new Date().toISOString()
+): void {
+  set((s) => ({
+    activeThreadTodos: s.activeThreadId === threadId ? todos : s.activeThreadTodos,
+    threads: s.threads.map((thread) =>
+      thread.id === threadId
+        ? { ...thread, todos, updatedAt: todos?.updatedAt ?? updatedAt }
+        : thread
+    )
+  }))
 }
 
 /**
@@ -382,16 +414,7 @@ function buildThreadEventSink(
 
     onTodos: (ev) => {
       if (!isCurrentStream()) return
-      set({ activeThreadTodos: ev.todos })
-      // Also keep the threads list entry in sync so the list progress
-      // indicator updates without a full refresh.
-      if (ev.todos) {
-        set((s) => ({
-          threads: s.threads.map((t) =>
-            t.id === boundThreadId ? { ...t, todos: ev.todos ?? null } : t
-          )
-        }))
-      }
+      applyTodosSnapshot(set, boundThreadId, ev.todos, ev.createdAt)
     },
 
     onThreadUpdated: (ev) => {
@@ -720,6 +743,48 @@ export const useChatStore = create<ChatState>((set, get) => ({
         ),
         error: err instanceof Error ? err.message : 'Failed to submit input'
       }))
+    }
+  },
+
+  setActiveThreadTodoStatus: async (todoId, status) => {
+    const state = get()
+    const threadId = state.activeThreadId
+    const todos = state.activeThreadTodos
+    if (!threadId || !todos) return false
+    const provider = getProvider()
+    try {
+      // Mirror desktop: when promoting to in_progress, demote any other
+      // in_progress item to pending (server enforces at most one active).
+      const nextItems = todos.items.map((item) => {
+        if (item.id === todoId) return { ...item, status }
+        if (status === 'in_progress' && item.status === 'in_progress') {
+          return { ...item, status: 'pending' as const }
+        }
+        return item
+      })
+      const next = await provider.setThreadTodos(
+        threadId,
+        threadTodoWriteItems({ ...todos, items: nextItems })
+      )
+      applyTodosSnapshot(set, threadId, next)
+      return true
+    } catch (err) {
+      set({ error: err instanceof Error ? err.message : 'Failed to update todo' })
+      return false
+    }
+  },
+
+  clearActiveThreadTodos: async () => {
+    const threadId = get().activeThreadId
+    if (!threadId) return false
+    const provider = getProvider()
+    try {
+      const cleared = await provider.clearThreadTodos(threadId)
+      if (cleared) applyTodosSnapshot(set, threadId, null)
+      return cleared
+    } catch (err) {
+      set({ error: err instanceof Error ? err.message : 'Failed to clear todos' })
+      return false
     }
   },
 

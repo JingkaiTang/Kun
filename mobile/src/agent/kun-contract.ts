@@ -162,6 +162,26 @@ export type CoreThreadTodosResponseJson = {
   todos: CoreThreadTodoListJson | null
 }
 
+/**
+ * Body of POST /v1/threads/:id/todos — full-list replacement.
+ * The server persists createdAt/updatedAt itself, so the writable
+ * item shape omits them. Mirrors kun SetThreadTodosRequestSchema.
+ */
+export type CoreSetThreadTodosRequestJson = {
+  todos: CoreThreadTodoWriteItemJson[]
+}
+
+export type CoreThreadTodoWriteItemJson = {
+  id: string
+  content: string
+  status: CoreThreadTodoStatusJson
+  source?: CoreThreadTodoSourceJson
+}
+
+export type CoreClearThreadTodosResponseJson = {
+  cleared: boolean
+}
+
 // ---------------------------------------------------------------------------
 // Usage
 // ---------------------------------------------------------------------------

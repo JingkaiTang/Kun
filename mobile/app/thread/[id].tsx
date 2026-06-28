@@ -17,7 +17,7 @@ import { Composer } from '../../src/components/Composer';
 import { TodoList } from '../../src/components/TodoList';
 import { StatusBar } from '../../src/components/StatusBar';
 import { EmptyState } from '../../src/components/EmptyState';
-import type { ChatBlock, UserInputAnswer } from '../../src/agent/types';
+import type { ChatBlock, ThreadTodoStatus, UserInputAnswer } from '../../src/agent/types';
 
 type ListItem =
   | { type: 'status'; key: 'status' }
@@ -47,6 +47,8 @@ export default function ThreadDetailScreen() {
   const steer = useChatStore((s) => s.steer);
   const resolveApproval = useChatStore((s) => s.resolveApproval);
   const resolveUserInput = useChatStore((s) => s.resolveUserInput);
+  const setActiveThreadTodoStatus = useChatStore((s) => s.setActiveThreadTodoStatus);
+  const clearActiveThreadTodos = useChatStore((s) => s.clearActiveThreadTodos);
   const clearError = useChatStore((s) => s.clearError);
 
   const [message, setMessage] = useState('');
@@ -150,13 +152,30 @@ export default function ThreadDetailScreen() {
     [resolveUserInput]
   );
 
+  const handleSetTodoStatus = useCallback(
+    (todoId: string, status: ThreadTodoStatus) => {
+      void setActiveThreadTodoStatus(todoId, status);
+    },
+    [setActiveThreadTodoStatus]
+  );
+
+  const handleClearTodos = useCallback(() => {
+    void clearActiveThreadTodos();
+  }, [clearActiveThreadTodos]);
+
   const renderItem = useCallback(
     ({ item }: { item: ListItem }) => {
       switch (item.type) {
         case 'status':
           return <StatusBar status={connectionStatus} />;
         case 'todo':
-          return activeThreadTodos ? <TodoList todos={activeThreadTodos.items} /> : null;
+          return activeThreadTodos ? (
+            <TodoList
+              todos={activeThreadTodos.items}
+              onSetStatus={handleSetTodoStatus}
+              onClear={handleClearTodos}
+            />
+          ) : null;
         case 'block':
           return (
             <MessageBubble
@@ -189,6 +208,8 @@ export default function ThreadDetailScreen() {
       handleDeny,
       handleSubmitUserInput,
       handleCancelUserInput,
+      handleSetTodoStatus,
+      handleClearTodos,
     ]
   );
 

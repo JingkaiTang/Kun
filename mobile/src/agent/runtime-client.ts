@@ -31,14 +31,18 @@ import type {
   ThreadEventSink,
   ThreadListOptions,
   ThreadTodoList,
+  ThreadTodoWriteItem,
   ThreadUsageSnapshot,
   UserInputAnswer
 } from './types'
 import type {
+  CoreClearThreadTodosResponseJson,
   CoreRuntimeEventJson,
+  CoreSetThreadTodosRequestJson,
   CoreStartTurnResponseJson,
   CoreThreadJson,
   CoreThreadSummaryJson,
+  CoreThreadTodoWriteItemJson,
   CoreThreadTodosResponseJson,
   CoreTurnItemJson,
   CoreUsageSnapshotJson
@@ -134,6 +138,34 @@ export class KunRuntimeClient implements AgentProvider {
       `/v1/threads/${encodeURIComponent(threadId)}/todos`
     )
     return data.todos ? todosFromCore(data.todos) : null
+  }
+
+  async setThreadTodos(threadId: string, items: ThreadTodoWriteItem[]): Promise<ThreadTodoList> {
+    const body: CoreSetThreadTodosRequestJson = {
+      todos: items.map<CoreThreadTodoWriteItemJson>((item) => ({
+        id: item.id,
+        content: item.content,
+        status: item.status,
+        ...(item.source ? { source: item.source } : {})
+      }))
+    }
+    const data = await this.request<CoreThreadTodosResponseJson>(
+      `/v1/threads/${encodeURIComponent(threadId)}/todos`,
+      { method: 'POST', body: JSON.stringify(body) }
+    )
+    // Server always returns the persisted list on success; fall back to
+    // an empty snapshot only if the gateway omitted it.
+    return data.todos
+      ? todosFromCore(data.todos)
+      : { threadId, items: [], updatedAt: new Date().toISOString() }
+  }
+
+  async clearThreadTodos(threadId: string): Promise<boolean> {
+    const data = await this.request<CoreClearThreadTodosResponseJson>(
+      `/v1/threads/${encodeURIComponent(threadId)}/todos`,
+      { method: 'DELETE' }
+    )
+    return data.cleared === true
   }
 
   async sendUserMessage(

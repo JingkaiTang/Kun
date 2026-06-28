@@ -24,6 +24,7 @@ import type {
   ThreadDeltaEvent,
   ThreadEventSink,
   ThreadGoal,
+  ThreadTodoItem,
   ThreadTodoList,
   ThreadUsageSnapshot,
   ToolBlock,
@@ -103,6 +104,22 @@ export function todosFromCore(todos: CoreThreadTodoListJson): ThreadTodoList {
     })),
     updatedAt: todos.updatedAt
   }
+}
+
+/**
+ * Strip createdAt/updatedAt from a normalized todo list to produce the
+ * writable item shape (mirrors desktop threadTodoWriteItems in
+ * plan-todo-sync.ts). Used before POST /v1/threads/:id/todos.
+ */
+export function threadTodoWriteItems(
+  todos: ThreadTodoList
+): Array<Pick<ThreadTodoItem, 'id' | 'content' | 'status' | 'source'>> {
+  return todos.items.map((item) => ({
+    id: item.id,
+    content: item.content,
+    status: item.status,
+    ...(item.source ? { source: item.source } : {})
+  }))
 }
 
 export function usageFromCore(usage: CoreUsageSnapshotJson): ThreadUsageSnapshot {
